@@ -1,5 +1,5 @@
 [project]
-name = "scripts"
+name = "aur-auto-update"
 version = "0.1.0"
 description = "AUR packages update tool"
 readme = "README.md"

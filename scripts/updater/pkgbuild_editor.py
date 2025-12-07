@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Union
 
 from constants import HashAlgorithmEnum
-from utils.hash import (
+from utils import (
     calculate_file_hash,
     calculate_sha256,
     calculate_multiple_hashes,

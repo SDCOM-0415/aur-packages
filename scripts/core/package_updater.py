@@ -6,11 +6,11 @@
 
 from pathlib import Path
 
-from constants import ArchEnum, DOWNLOAD_DIR, ParserEnum
-from fetcher.fetcher import Fetcher
-from loaders.config_loader import ConfigLoader, PackageConfig
+from constants import DOWNLOAD_DIR, ParserEnum
+from fetcher import Fetcher
+from loaders import ConfigLoader, PackageConfig
 from parsers import QQParser
-from updater.pkgbuild_editor import PKGBUILDEditor
+from updater import PKGBUILDEditor
 
 
 class PackageUpdater:
@@ -20,8 +20,7 @@ class PackageUpdater:
         self.fetcher = Fetcher()
         self.config = ConfigLoader.load_from_yaml()
         self.parsers = {
-            "qq": QQParser(),
-            "QQParser": QQParser(),  # 兼容packages.yaml中的配置
+            ParserEnum.QQ.value: QQParser(),
         }
         # 获取项目根目录
         # 当前脚本位于 scripts/core/，所以需要向上两级到达项目根目录
@@ -197,7 +196,7 @@ class PackageUpdater:
         Returns:
             SHA512校验和
         """
-        from utils.hash import calculate_file_hash
+        from utils import calculate_file_hash
         from constants import HashAlgorithmEnum
 
         return calculate_file_hash(file_path, HashAlgorithmEnum.SHA512.value)
