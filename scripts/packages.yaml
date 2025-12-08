@@ -12,3 +12,11 @@ packages:
       - aarch64
       - loong64
   
+  navicat:
+    name: navicat-premium-cs
+    source: navicat-premium-cs
+    source_url: "https://www.navicat.com.cn/products/navicat-premium"
+    fetch_url: "https://www.navicat.com.cn/products/navicat-premium-release-note#L"
+    upstream: "PremiumSoft CyberTech Ltd./Navicat Premium"
+    parser: NavicatPremiumCSParser
+    pkgbuild: "packages/navicat-premium-cs/PKGBUILD"

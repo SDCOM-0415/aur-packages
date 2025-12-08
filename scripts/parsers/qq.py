@@ -1,10 +1,10 @@
 from typing import Any
 import re, json
 from constants import ArchEnum
-from .base_parser import Parser
+from .base_parser import BaseParser
 
 
-class QQParser(Parser):
+class QQParser(BaseParser):
     def parse_version(self, response_data: str | Any) -> str | None:
         """
         解析QQ响应数据，提取版本号

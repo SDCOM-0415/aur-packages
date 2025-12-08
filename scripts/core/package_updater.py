@@ -9,7 +9,7 @@ from pathlib import Path
 from constants import DOWNLOAD_DIR, ParserEnum
 from fetcher import Fetcher
 from loaders import ConfigLoader, PackageConfig
-from parsers import QQParser
+from parsers import QQParser, NavicatPremiumCSParser
 from updater import PKGBUILDEditor
 
 
@@ -21,6 +21,7 @@ class PackageUpdater:
         self.config = ConfigLoader.load_from_yaml()
         self.parsers = {
             ParserEnum.QQ.value: QQParser(),
+            ParserEnum.NAVICAT_PREMIUM_CS.value: NavicatPremiumCSParser(),
         }
         # 获取项目根目录（这里的项目根目录指更新脚本的根目录）
         # 当前脚本位于 scripts/core/，所以需要向上两级到达项目根目录

@@ -12,6 +12,7 @@ class ArchEnum(Enum):
 
 class PackageEnum(Enum):
     QQ = "qq"
+    NAVICAT_PREMIUM_CS = "navicat-premium-cs"
 
 
 class HashAlgorithmEnum(Enum):
@@ -30,3 +31,4 @@ class ParserEnum(Enum):
     """解析器枚举"""
 
     QQ = "QQParser"
+    NAVICAT_PREMIUM_CS = "NavicatPremiumCSParser"
