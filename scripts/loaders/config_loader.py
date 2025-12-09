@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List
 import yaml
-from constants import ArchEnum
+from constants.constants import ArchEnum
 
 
 class PackageConfig(BaseModel):

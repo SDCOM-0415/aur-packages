@@ -1,6 +1,6 @@
 from typing import Any
 import re, json
-from constants import ArchEnum
+from constants.constants import ArchEnum
 from .base_parser import BaseParser
 
 

@@ -2,8 +2,8 @@ import re
 from pathlib import Path
 from typing import Union
 
-from constants import HashAlgorithmEnum
-from utils import (
+from constants.constants import HashAlgorithmEnum
+from utils.hash import (
     calculate_file_hash,
     calculate_sha256,
     calculate_multiple_hashes,

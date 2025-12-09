@@ -6,11 +6,12 @@
 
 from pathlib import Path
 
-from constants import DOWNLOAD_DIR, ParserEnum
-from fetcher import Fetcher
-from loaders import ConfigLoader, PackageConfig
-from parsers import QQParser, NavicatPremiumCSParser
-from updater import PKGBUILDEditor
+from constants.constants import DOWNLOAD_DIR, ParserEnum
+from fetcher.fetcher import Fetcher
+from loaders.config_loader import ConfigLoader, PackageConfig
+from parsers.qq import QQParser
+from parsers.navicat_premium_cs import NavicatPremiumCSParser
+from updater.pkgbuild_editor import PKGBUILDEditor
 
 
 class PackageUpdater:
@@ -197,8 +198,8 @@ class PackageUpdater:
         Returns:
             SHA512校验和
         """
-        from utils import calculate_file_hash
-        from constants import HashAlgorithmEnum
+        from utils.hash import calculate_file_hash
+        from constants.constants import HashAlgorithmEnum
 
         return calculate_file_hash(file_path, HashAlgorithmEnum.SHA512.value)
 

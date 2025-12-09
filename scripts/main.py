@@ -3,7 +3,8 @@
 AUR包更新工具主入口
 """
 
-from cli import main
+from cli.cli import update_main
+import asyncio
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(update_main())

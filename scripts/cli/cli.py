@@ -1,18 +1,6 @@
-#!/usr/bin/env python3
-"""
-AUR包更新工具主入口
-"""
-
 import argparse
-import asyncio
 import sys
-from pathlib import Path
-
-# 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-from core import PackageUpdater
+from core.package_updater import PackageUpdater
 
 
 async def update_main():
@@ -38,16 +26,3 @@ async def update_main():
     else:
         # 默认行为：更新所有包
         await updater.update_all_packages()
-
-
-def main():
-    """主函数"""
-    print("AUR包更新工具")
-    print("=" * 50)
-
-    # 运行更新主程序
-    asyncio.run(update_main())
-
-
-if __name__ == "__main__":
-    main()

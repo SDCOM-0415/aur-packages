@@ -1,8 +1,7 @@
 import hashlib
 from pathlib import Path
-from typing import Dict, Union
-
-from constants import HashAlgorithmEnum
+from typing import Union
+from constants.constants import HashAlgorithmEnum
 
 
 def calculate_file_hash(
@@ -77,7 +76,7 @@ def calculate_sha256(file_path: Union[str, Path]) -> str:
 
 def calculate_multiple_hashes(
     file_path: Union[str, Path], algorithms: list | None = None
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     一次性计算文件的多种哈希值
 
@@ -179,8 +178,8 @@ def format_checksum_for_pkgbuild(checksum: str, arch: str | None = None) -> str:
 
 
 def format_multiple_checksums_for_pkgbuild(
-    checksums: Dict[str, str], generic_checksum: str | None = None
-) -> Dict[str, str]:
+    checksums: dict[str, str], generic_checksum: str | None = None
+) -> dict[str, str]:
     """
     格式化多个校验和以用于PKGBUILD文件
 
