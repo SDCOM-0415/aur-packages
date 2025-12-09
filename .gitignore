@@ -24,3 +24,5 @@ wheels/
 
 # Virtual environments
 .venv
+
+*.AppImage

@@ -22,7 +22,7 @@ class BaseParser(ABC):
         pass
 
     @abstractmethod
-    def parse_deb_url(self, arch: ArchEnum | str, response_data: str | Any) -> str | None:
+    def parse_url(self, arch: ArchEnum | str, response_data: str | Any) -> str | None:
         """
         解析响应数据，提取 deb 包 URL
 

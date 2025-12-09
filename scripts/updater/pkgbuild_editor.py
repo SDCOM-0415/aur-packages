@@ -98,16 +98,22 @@ class PKGBUILDEditor:
         replacement = f"sha512sums=('{new_checksum}')"
         self.content = re.sub(pattern, replacement, self.content, flags=re.MULTILINE)
 
-    def update_arch_checksum(self, arch: str, new_checksum: str) -> None:
+    def update_arch_checksum(
+        self,
+        arch: str,
+        new_checksum: str,
+        hash_algorithm: str = HashAlgorithmEnum.SHA512.value,
+    ) -> None:
         """
-        更新特定架构的sha512sums字段
+        更新特定架构的校验和字段
 
         Args:
             arch: 架构名称，如'x86_64', 'aarch64', 'loong64'
-            new_checksum: 新的SHA512校验和
+            new_checksum: 新的校验和
+            hash_algorithm: 哈希算法，支持 'md5', 'sha1', 'sha256', 'sha512' 等，默认为 'sha512'
         """
-        pattern = f"^sha512sums_{arch}=\\(.*\\)$"
-        replacement = f"sha512sums_{arch}=('{new_checksum}')"
+        pattern = f"^{hash_algorithm}sums_{arch}=\\(.*\\)$"
+        replacement = f"{hash_algorithm}sums_{arch}=('{new_checksum}')"
         self.content = re.sub(pattern, replacement, self.content, flags=re.MULTILINE)
 
     def update_source_url(self, arch: str, new_url: str) -> None:
@@ -178,17 +184,19 @@ class PKGBUILDEditor:
         new_pkgrel: int = 1,
         new_epoch: int | None = None,
         generic_checksum: str | None = None,
+        hash_algorithm: str = HashAlgorithmEnum.SHA512.value,
     ) -> None:
         """
         一次性更新所有相关字段
 
         Args:
             new_version: 新版本号
-            new_checksums: 各架构的SHA512校验和，键为架构名，值为校验和
+            new_checksums: 各架构的校验和，键为架构名，值为校验和
             new_urls: 各架构的源码URL，键为架构名，值为URL
             new_pkgrel: 新的发布号，默认为1
             new_epoch: 新的epoch值，如果为None则不更新
-            generic_checksum: 通用的SHA512校验和，如果为None则不更新
+            generic_checksum: 通用的校验和，如果为None则不更新
+            hash_algorithm: 哈希算法，默认为 'sha512'
         """
         # 更新版本和发布号
         self.update_pkgver(new_version)
@@ -200,11 +208,18 @@ class PKGBUILDEditor:
 
         # 更新通用校验和（如果提供）
         if generic_checksum:
-            self.update_sha512sums(generic_checksum)
+            if hash_algorithm == HashAlgorithmEnum.SHA512.value:
+                self.update_sha512sums(generic_checksum)
+            else:
+                pattern = f"^{hash_algorithm}sums=\\(.*\\)$"
+                replacement = f"{hash_algorithm}sums=('{generic_checksum}')"
+                self.content = re.sub(
+                    pattern, replacement, self.content, flags=re.MULTILINE
+                )
 
         # 更新各架构的校验和和URL
         for arch, checksum in new_checksums.items():
-            self.update_arch_checksum(arch, checksum)
+            self.update_arch_checksum(arch, checksum, hash_algorithm)
 
         for arch, url in new_urls.items():
             self.update_source_url(arch, url)

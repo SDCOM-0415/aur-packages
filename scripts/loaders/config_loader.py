@@ -12,6 +12,9 @@ class PackageConfig(BaseModel):
     parser: str
     pkgbuild: str
     arch: List[str] = Field(default_factory=list, description="支持的架构列表")
+    update_source_url: bool = Field(
+        default=True, description="是否更新PKGBUILD中的source URL"
+    )
 
     class Config:
         # 允许通过 . 访问属性

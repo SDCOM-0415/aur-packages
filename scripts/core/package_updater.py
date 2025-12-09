@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 包更新器
 整合fetch、parse和update三个流程
@@ -9,8 +8,9 @@ from pathlib import Path
 from constants.constants import DOWNLOAD_DIR, ParserEnum
 from fetcher.fetcher import Fetcher
 from loaders.config_loader import ConfigLoader, PackageConfig
+from parsers.base_parser import BaseParser
 from parsers.qq import QQParser
-from parsers.navicat_premium_cs import NavicatPremiumCSParser
+from parsers.navicat import NavicatPremiumCSParser
 from updater.pkgbuild_editor import PKGBUILDEditor
 
 
@@ -20,7 +20,7 @@ class PackageUpdater:
     def __init__(self):
         self.fetcher = Fetcher()
         self.config = ConfigLoader.load_from_yaml()
-        self.parsers = {
+        self.parsers: dict[str, BaseParser] = {
             ParserEnum.QQ.value: QQParser(),
             ParserEnum.NAVICAT_PREMIUM_CS.value: NavicatPremiumCSParser(),
         }
@@ -117,10 +117,9 @@ class PackageUpdater:
             # 获取各架构的下载URL
             arch_urls = {}
             for arch in supported_archs:
-                url = parser.parse_deb_url(arch, response_data)
+                url = parser.parse_url(arch, response_data)
                 if url:
                     arch_urls[arch.value] = url
-                    print(f"  {arch.value} 架构下载URL: {url}")
                 else:
                     print(f"  警告: 无法获取 {arch.value} 架构的下载URL")
 
@@ -151,7 +150,9 @@ class PackageUpdater:
 
             # 更新各架构的source和校验和
             for arch, url in arch_urls.items():
-                editor.update_source_url(arch, url)
+                # 根据配置决定是否更新source URL
+                if package_config.update_source_url:
+                    editor.update_source_url(arch, url)
                 editor.update_arch_checksum(arch, arch_checksums[arch])
 
             # 保存PKGBUILD

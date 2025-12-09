@@ -14,7 +14,7 @@ class QQParser(BaseParser):
         Returns:
             版本号字符串，如果解析失败则返回None
         """
-        url = self.parse_deb_url(ArchEnum.X86_64, response_data)  # 默认使用x86_64架构
+        url = self.parse_url(ArchEnum.X86_64, response_data)  # 默认使用x86_64架构
         if not url:
             return None
         pattern = r"QQ_([\d._]+)_amd64"
@@ -23,9 +23,7 @@ class QQParser(BaseParser):
             return matched.group(1)
         return None
 
-    def parse_deb_url(
-        self, arch: ArchEnum | str, response_data: str | Any
-    ) -> str | None:
+    def parse_url(self, arch: ArchEnum | str, response_data: str | Any) -> str | None:
         """
         解析QQ响应数据，提取deb包URL
 

@@ -32,3 +32,10 @@ class ParserEnum(Enum):
 
     QQ = "QQParser"
     NAVICAT_PREMIUM_CS = "NavicatPremiumCSParser"
+
+
+# Navicat下载URL映射
+NAVICAT_URLS = {
+    ArchEnum.X86_64: "https://dn.navicat.com/download/navicat17-premium-cs-x86_64.AppImage",
+    ArchEnum.AARCH64: "https://dn.navicat.com/download/navicat17-premium-cs-aarch64.AppImage",
+}
