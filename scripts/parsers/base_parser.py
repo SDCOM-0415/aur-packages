@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any
+from constants.constants import ArchEnum
 
 
 class BaseParser(ABC):
@@ -8,7 +9,7 @@ class BaseParser(ABC):
     """
 
     @abstractmethod
-    def parse_version(self, response_data: dict[str, Any]) -> str | None:
+    def parse_version(self, response_data: str | Any) -> str | None:
         """
         解析响应数据，提取版本号
 
@@ -21,7 +22,7 @@ class BaseParser(ABC):
         pass
 
     @abstractmethod
-    def parse_deb_url(self, arch: str, response_data: dict[str, Any]) -> str | None:
+    def parse_deb_url(self, arch: ArchEnum | str, response_data: str | Any) -> str | None:
         """
         解析响应数据，提取 deb 包 URL
 

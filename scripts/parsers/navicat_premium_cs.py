@@ -1,9 +1,10 @@
 from typing import Any
+from constants.constants import ArchEnum
 from .base_parser import BaseParser
 
 
 class NavicatPremiumCSParser(BaseParser):
-    def parse_version(self, response_data: dict[str, Any]) -> str | None:
+    def parse_version(self, response_data: str | Any) -> str | None:
         """
         解析响应数据，提取 Navicat 版本号
 
@@ -15,7 +16,7 @@ class NavicatPremiumCSParser(BaseParser):
         """
         pass
 
-    def parse_deb_url(self, arch: str, response_data: dict[str, Any]) -> str | None:
+    def parse_deb_url(self, arch: ArchEnum | str, response_data: str | Any) -> str | None:
         """
         解析响应数据，提取 Navicat deb 包 URL
 
