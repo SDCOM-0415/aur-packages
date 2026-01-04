@@ -48,19 +48,6 @@ def calculate_file_hash(
     return hash_func.hexdigest()
 
 
-def calculate_sha512(file_path: str | Path) -> str:
-    """
-    计算文件的SHA512哈希值
-
-    Args:
-        file_path: 文件路径
-
-    Returns:
-        文件的SHA512哈希值字符串
-    """
-    return calculate_file_hash(file_path, HashAlgorithmEnum.SHA512.value)
-
-
 def calculate_sha256(file_path: str | Path) -> str:
     """
     计算文件的SHA256哈希值

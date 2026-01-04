@@ -14,6 +14,7 @@ from parsers.navicat import NavicatPremiumCSParser
 from updater.pkgbuild_editor import PKGBUILDEditor
 from utils.downloader import Downloader
 from utils.url_utils import generate_download_filename
+from utils.version_utils import compare_versions
 
 
 class PackageUpdater:
@@ -61,6 +62,92 @@ class PackageUpdater:
         full_path = self.pkgbuild_root / pkgbuild_relative_path
         return full_path
 
+    async def _fetch_arch_urls(
+        self,
+        parser: BaseParser,
+        supported_archs: list,
+        response_data: str
+    ) -> dict[str, str]:
+        """
+        获取所有架构的下载 URL
+
+        Args:
+            parser: 解析器实例
+            supported_archs: 支持的架构列表
+            response_data: 响应数据
+
+        Returns:
+            {arch: url} 字典
+        """
+        arch_urls = {}
+        for arch in supported_archs:
+            url = parser.parse_url(arch, response_data)
+            if url:
+                arch_urls[arch.value] = url
+            else:
+                print(f"  警告: 无法获取 {arch.value} 架构的下载URL")
+        return arch_urls
+
+    async def _download_and_verify(
+        self,
+        package_name: str,
+        new_version: str,
+        arch_urls: dict[str, str],
+        verify_only: bool = False,
+    ) -> tuple[dict[str, str], bool]:
+        """
+        下载文件并可选地验证哈希
+
+        Args:
+            package_name: 包名
+            new_version: 新版本号
+            arch_urls: {arch: url} 字典
+            verify_only: 是否仅验证（不返回失败）
+
+        Returns:
+            (checksums, success) 元组
+        """
+        download_dir = Path(DOWNLOAD_DIR)
+        download_dir.mkdir(exist_ok=True)
+
+        downloads = {
+            arch: (url, download_dir / generate_download_filename(package_name, new_version, arch, url, default_extension=".deb"))
+            for arch, url in arch_urls.items()
+        }
+
+        download_results = await self.downloader.download_all(downloads)
+
+        checksums = {}
+        failed_archs = []
+
+        for arch, result in download_results.items():
+            if not result.success:
+                if not verify_only:
+                    print(f"  错误: {arch} 架构下载失败: {result.error}")
+                    failed_archs.append(arch)
+                else:
+                    print(f"  警告: {arch} 架构下载失败: {result.error}")
+                continue
+
+            if result.file_path is None:
+                if not verify_only:
+                    print(f"  错误: {arch} 架构文件路径为空")
+                    failed_archs.append(arch)
+                continue
+
+            checksum = await self._calculate_checksum(result.file_path)
+            checksums[arch] = checksum
+            print(f"  {arch} 架构哈希验证通过: {checksum}")
+
+        if not verify_only and (failed_archs or not checksums):
+            if failed_archs:
+                print(f"  错误: {len(failed_archs)} 个架构下载失败: {failed_archs}")
+            if not checksums:
+                print("  错误: 没有成功下载任何架构的文件")
+            return {}, False
+
+        return checksums, True
+
     async def update_package(
         self, package_name: str, package_config: PackageConfig
     ) -> bool:
@@ -99,7 +186,6 @@ class PackageUpdater:
             print(f"  最新版本: {new_version}")
 
             # 3. 检查当前版本
-            # 使用_get_pkgbuild_path方法获取正确的PKGBUILD路径
             pkgbuild_path = self._get_pkgbuild_path(package_config.pkgbuild)
             print(f"  PKGBUILD路径: {pkgbuild_path}")
 
@@ -111,178 +197,179 @@ class PackageUpdater:
             current_version = editor.get_pkgver()
             print(f"  当前版本: {current_version}")
 
-            # 获取包支持的架构（需要在版本检查之前获取，以便复用）
+            # 获取包支持的架构
             supported_archs = package_config.get_supported_archs()
 
-            if new_version == current_version:
-                print("  版本未变化，检查文件哈希是否变化...")
+            # 版本比较：检查是否需要更新
+            version_comparison = compare_versions(new_version, current_version)
 
-                # 获取 PKGBUILD 中当前的哈希值
-                current_checksums = {}
-                for arch in supported_archs:
-                    current_checksum = editor.get_checksum(arch.value)
-                    if current_checksum:
-                        current_checksums[arch.value] = current_checksum
-                    else:
-                        print(f"  警告: 无法获取 {arch.value} 架构的当前哈希值")
+            if version_comparison <= 0:
+                # 当前版本 >= 新版本，无需更新 PKGBUILD
+                # 但仍需下载并验证哈希数据（使用当前版本URL）
+                return await self._handle_version_not_newer(
+                    package_name, new_version, current_version,
+                    parser, supported_archs, response_data
+                )
 
-                # 下载文件并计算新哈希值
-                download_dir = Path(DOWNLOAD_DIR)
-                download_dir.mkdir(exist_ok=True)
-
-                # 获取各架构的下载URL
-                arch_urls = {}
-                for arch in supported_archs:
-                    url = parser.parse_url(arch, response_data)
-                    if url:
-                        arch_urls[arch.value] = url
-                    else:
-                        print(f"  警告: 无法获取 {arch.value} 架构的下载URL")
-
-                if not arch_urls:
-                    print("  错误: 无法获取任何架构的下载URL")
-                    return False
-
-                # 下载文件
-                downloads = {
-                    arch: (url, download_dir / generate_download_filename(package_name, new_version, arch, url, default_extension=".deb"))
-                    for arch, url in arch_urls.items()
-                }
-
-                download_results = await self.downloader.download_all(downloads)
-
-                # 计算新哈希值并比较
-                new_checksums = {}
-                hash_changed = False
-
-                for arch, result in download_results.items():
-                    if not result.success:
-                        print(f"  错误: {arch} 架构下载失败: {result.error}")
-                        return False
-
-                    if result.file_path is None:
-                        print(f"  错误: {arch} 架构文件路径为空")
-                        return False
-
-                    # 计算新哈希值
-                    new_checksum = await self._calculate_checksum(result.file_path)
-                    new_checksums[arch] = new_checksum
-
-                    # 比较哈希值
-                    if arch in current_checksums:
-                        if current_checksums[arch] != new_checksum:
-                            print(f"  检测到 {arch} 架构的文件哈希已变化")
-                            hash_changed = True
-                        else:
-                            print(f"  {arch} 架构的文件哈希未变化")
-
-                if not hash_changed:
-                    print("  所有架构的文件哈希均未变化，无需更新")
-                    return True
-
-                # 哈希已变化，自增 pkgrel
-                print("  文件哈希已变化，更新 pkgrel 和校验和...")
-                current_pkgrel = editor.get_pkgrel()
-                new_pkgrel = current_pkgrel + 1
-                print(f"  pkgrel: {current_pkgrel} → {new_pkgrel}")
-
-                # 更新 pkgrel 和校验和
-                editor.update_pkgrel(new_pkgrel)
-
-                # 更新各架构的 source 和校验和
-                for arch, url in arch_urls.items():
-                    if package_config.update_source_url:
-                        editor.update_source_url(arch, url)
-                    editor.update_arch_checksum(arch, new_checksums[arch])
-
-                # 保存 PKGBUILD
-                editor.save()
-                print(f"  包 {package_name} 的 pkgrel 已更新（版本未变但哈希已变）")
-                return True
-
-            # 4. 下载文件并计算校验和
-            print("  3. 下载文件并计算校验和...")
-            download_dir = Path(DOWNLOAD_DIR)
-            download_dir.mkdir(exist_ok=True)
-
-            print(f"  支持的架构: {[arch.value for arch in supported_archs]}")
-
-            # 获取各架构的下载URL
-            arch_urls = {}
-            for arch in supported_archs:
-                url = parser.parse_url(arch, response_data)
-                if url:
-                    arch_urls[arch.value] = url
-                else:
-                    print(f"  警告: 无法获取 {arch.value} 架构的下载URL")
-
-            if not arch_urls:
-                print("  错误: 无法获取任何架构的下载URL")
-                return False
-
-            # 使用并行下载
-            downloads = {
-                arch: (url, download_dir / generate_download_filename(package_name, new_version, arch, url, default_extension=".deb"))
-                for arch, url in arch_urls.items()
-            }
-
-            download_results = await self.downloader.download_all(downloads)
-
-            # 检查下载结果并计算校验和
-            arch_checksums = {}
-            failed_archs = []
-
-            for arch, result in download_results.items():
-                if not result.success:
-                    print(f"    错误: {arch} 架构下载失败: {result.error}")
-                    failed_archs.append(arch)
-                    continue
-
-                # 计算校验和
-                if result.file_path is None:
-                    print(f"    错误: {arch} 架构文件路径为空")
-                    failed_archs.append(arch)
-                    continue
-
-                checksum = await self._calculate_checksum(result.file_path)
-                arch_checksums[arch] = checksum
-                print(f"    {arch} 架构校验和: {checksum}")
-
-            if failed_archs:
-                print(f"  错误: {len(failed_archs)} 个架构下载失败: {failed_archs}")
-                return False
-
-            if not arch_checksums:
-                print("  错误: 没有成功下载任何架构的文件")
-                return False
-
-            # 5. 更新PKGBUILD
-            version_changed = new_version != current_version
-
-            if version_changed:
-                print("  4. 更新PKGBUILD版本和校验和...")
-                editor.update_pkgver(new_version)
-                editor.update_pkgrel(1)  # 重置pkgrel为1
-            else:
-                print("  4. 仅更新PKGBUILD校验和...")
-
-            # 更新各架构的source和校验和
-            for arch, url in arch_urls.items():
-                # 根据配置决定是否更新source URL
-                if package_config.update_source_url:
-                    editor.update_source_url(arch, url)
-                editor.update_arch_checksum(arch, arch_checksums[arch])
-
-            # 保存PKGBUILD
-            editor.save()
-            print("  5. PKGBUILD已更新")
-
-            print(f"包 {package_name} 更新完成!")
-            return True
+            # 版本更新：正常更新流程（version_comparison > 0）
+            return await self._handle_version_update(
+                package_name, new_version, current_version,
+                editor, parser, supported_archs, response_data, package_config
+            )
 
         except Exception as e:
             print(f"  错误: 更新包 {package_name} 时发生异常: {e}")
             return False
+
+    async def _handle_version_not_newer(
+        self,
+        package_name: str,
+        new_version: str,
+        current_version: str,
+        parser: BaseParser,
+        supported_archs: list,
+        response_data: str,
+    ) -> bool:
+        """
+        处理版本不更新的情况（当前版本 >= 新版本）
+
+        两种场景：
+        1. 当前版本 > 新版本：版本降级，仅验证哈希
+        2. 当前版本 = 新版本：版本相同，检查哈希变化并更新 pkgrel
+
+        Args:
+            package_name: 包名
+            new_version: 新版本号
+            current_version: 当前版本号
+            parser: 解析器实例
+            supported_archs: 支持的架构列表
+            response_data: 响应数据
+
+        Returns:
+            是否处理成功
+        """
+        version_comparison = compare_versions(new_version, current_version)
+
+        if version_comparison < 0:
+            # 当前版本 > 新版本：版本降级
+            print(f"  跳过更新: 新版本 {new_version} 低于当前版本 {current_version}")
+            print("  说明: 当前包版本较新，无需降级")
+            print("  注意: 仍将下载并验证哈希数据...")
+
+            arch_urls = await self._fetch_arch_urls(parser, supported_archs, response_data)
+            if not arch_urls:
+                print("  错误: 无法获取任何架构的下载URL")
+                return False
+
+            checksums, _ = await self._download_and_verify(
+                package_name, new_version, arch_urls, verify_only=True
+            )
+
+            print(f"  包 {package_name} 验证完成（未更新 PKGBUILD）")
+            return True
+
+        else:  # version_comparison == 0
+            # 当前版本 = 新版本：检查哈希变化
+            print("  版本未变化，检查文件哈希是否变化...")
+
+            # 获取当前 PKGBUILD 中的哈希值
+            pkgbuild_path = self._get_pkgbuild_path(
+                self.config.packages[package_name].pkgbuild
+            )
+            editor = PKGBUILDEditor(pkgbuild_path)
+
+            current_checksums = {}
+            for arch in supported_archs:
+                current_checksum = editor.get_checksum(arch.value)
+                if current_checksum:
+                    current_checksums[arch.value] = current_checksum
+                else:
+                    print(f"  警告: 无法获取 {arch.value} 架构的当前哈希值")
+
+            # 下载并计算新哈希值
+            arch_urls = await self._fetch_arch_urls(parser, supported_archs, response_data)
+            if not arch_urls:
+                print("  错误: 无法获取任何架构的下载URL")
+                return False
+
+            new_checksums, success = await self._download_and_verify(
+                package_name, new_version, arch_urls
+            )
+            if not success:
+                return False
+
+            # 比较哈希值
+            hash_changed = False
+            for arch, new_checksum in new_checksums.items():
+                if arch in current_checksums:
+                    if current_checksums[arch] != new_checksum:
+                        print(f"  检测到 {arch} 架构的文件哈希已变化")
+                        hash_changed = True
+                    else:
+                        print(f"  {arch} 架构的文件哈希未变化")
+
+            if not hash_changed:
+                print("  所有架构的文件哈希均未变化，无需更新")
+                return True
+
+            # 哈希已变化，自增 pkgrel
+            print("  文件哈希已变化，更新 pkgrel 和校验和...")
+            current_pkgrel = editor.get_pkgrel()
+            new_pkgrel = current_pkgrel + 1
+            print(f"  pkgrel: {current_pkgrel} → {new_pkgrel}")
+
+            editor.update_pkgrel(new_pkgrel)
+
+            # 更新校验和（不更新 source URL，因为版本未变）
+            for arch, checksum in new_checksums.items():
+                editor.update_arch_checksum(arch, checksum)
+
+            editor.save()
+            print(f"  包 {package_name} 的 pkgrel 已更新（版本未变但哈希已变）")
+            return True
+
+    async def _handle_version_update(
+        self,
+        package_name: str,
+        new_version: str,
+        current_version: str,
+        editor: PKGBUILDEditor,
+        parser: BaseParser,
+        supported_archs: list,
+        response_data: str,
+        package_config: PackageConfig,
+    ) -> bool:
+        """处理版本更新情况"""
+        print("  3. 下载文件并计算校验和...")
+        print(f"  支持的架构: {[arch.value for arch in supported_archs]}")
+
+        arch_urls = await self._fetch_arch_urls(parser, supported_archs, response_data)
+        if not arch_urls:
+            print("  错误: 无法获取任何架构的下载URL")
+            return False
+
+        checksums, success = await self._download_and_verify(
+            package_name, new_version, arch_urls
+        )
+        if not success:
+            return False
+
+        # 更新 PKGBUILD
+        print("  4. 更新PKGBUILD版本和校验和...")
+        editor.update_pkgver(new_version)
+        editor.update_pkgrel(1)  # 重置 pkgrel 为 1
+
+        # 更新各架构的 source 和校验和
+        for arch, url in arch_urls.items():
+            if package_config.update_source_url:
+                editor.update_source_url(arch, url)
+            editor.update_arch_checksum(arch, checksums[arch])
+
+        editor.save()
+        print("  5. PKGBUILD已更新")
+
+        print(f"包 {package_name} 更新完成!")
+        return True
 
     async def _calculate_checksum(self, file_path: Path) -> str:
         """
