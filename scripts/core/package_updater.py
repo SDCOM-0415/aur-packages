@@ -13,6 +13,7 @@ from parsers.qq import QQParser
 from parsers.navicat import NavicatPremiumCSParser
 from updater.pkgbuild_editor import PKGBUILDEditor
 from utils.downloader import Downloader
+from utils.url_utils import generate_download_filename
 
 
 class PackageUpdater:
@@ -110,20 +111,100 @@ class PackageUpdater:
             current_version = editor.get_pkgver()
             print(f"  当前版本: {current_version}")
 
+            # 获取包支持的架构（需要在版本检查之前获取，以便复用）
+            supported_archs = package_config.get_supported_archs()
+
             if new_version == current_version:
-                if package_config.force_update_hash:
-                    print("  版本未变化，但 force_update_hash=true，强制更新哈希值")
-                else:
-                    print("  版本已是最新，无需更新")
+                print("  版本未变化，检查文件哈希是否变化...")
+
+                # 获取 PKGBUILD 中当前的哈希值
+                current_checksums = {}
+                for arch in supported_archs:
+                    current_checksum = editor.get_checksum(arch.value)
+                    if current_checksum:
+                        current_checksums[arch.value] = current_checksum
+                    else:
+                        print(f"  警告: 无法获取 {arch.value} 架构的当前哈希值")
+
+                # 下载文件并计算新哈希值
+                download_dir = Path(DOWNLOAD_DIR)
+                download_dir.mkdir(exist_ok=True)
+
+                # 获取各架构的下载URL
+                arch_urls = {}
+                for arch in supported_archs:
+                    url = parser.parse_url(arch, response_data)
+                    if url:
+                        arch_urls[arch.value] = url
+                    else:
+                        print(f"  警告: 无法获取 {arch.value} 架构的下载URL")
+
+                if not arch_urls:
+                    print("  错误: 无法获取任何架构的下载URL")
+                    return False
+
+                # 下载文件
+                downloads = {
+                    arch: (url, download_dir / generate_download_filename(package_name, new_version, arch, url, default_extension=".deb"))
+                    for arch, url in arch_urls.items()
+                }
+
+                download_results = await self.downloader.download_all(downloads)
+
+                # 计算新哈希值并比较
+                new_checksums = {}
+                hash_changed = False
+
+                for arch, result in download_results.items():
+                    if not result.success:
+                        print(f"  错误: {arch} 架构下载失败: {result.error}")
+                        return False
+
+                    if result.file_path is None:
+                        print(f"  错误: {arch} 架构文件路径为空")
+                        return False
+
+                    # 计算新哈希值
+                    new_checksum = await self._calculate_checksum(result.file_path)
+                    new_checksums[arch] = new_checksum
+
+                    # 比较哈希值
+                    if arch in current_checksums:
+                        if current_checksums[arch] != new_checksum:
+                            print(f"  检测到 {arch} 架构的文件哈希已变化")
+                            hash_changed = True
+                        else:
+                            print(f"  {arch} 架构的文件哈希未变化")
+
+                if not hash_changed:
+                    print("  所有架构的文件哈希均未变化，无需更新")
                     return True
+
+                # 哈希已变化，自增 pkgrel
+                print("  文件哈希已变化，更新 pkgrel 和校验和...")
+                current_pkgrel = editor.get_pkgrel()
+                new_pkgrel = current_pkgrel + 1
+                print(f"  pkgrel: {current_pkgrel} → {new_pkgrel}")
+
+                # 更新 pkgrel 和校验和
+                editor.update_pkgrel(new_pkgrel)
+
+                # 更新各架构的 source 和校验和
+                for arch, url in arch_urls.items():
+                    if package_config.update_source_url:
+                        editor.update_source_url(arch, url)
+                    editor.update_arch_checksum(arch, new_checksums[arch])
+
+                # 保存 PKGBUILD
+                editor.save()
+                print(f"  包 {package_name} 的 pkgrel 已更新（版本未变但哈希已变）")
+                return True
 
             # 4. 下载文件并计算校验和
             print("  3. 下载文件并计算校验和...")
             download_dir = Path(DOWNLOAD_DIR)
             download_dir.mkdir(exist_ok=True)
 
-            # 获取包支持的架构
-            supported_archs = package_config.get_supported_archs()
             print(f"  支持的架构: {[arch.value for arch in supported_archs]}")
 
             # 获取各架构的下载URL
@@ -141,7 +222,7 @@ class PackageUpdater:
 
             # 使用并行下载
             downloads = {
-                arch: (url, download_dir / f"{package_name}_{new_version}_{arch}.deb")
+                arch: (url, download_dir / generate_download_filename(package_name, new_version, arch, url, default_extension=".deb"))
                 for arch, url in arch_urls.items()
             }
 

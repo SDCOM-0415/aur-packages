@@ -15,9 +15,6 @@ class PackageConfig(BaseModel):
     update_source_url: bool = Field(
         default=True, description="是否更新PKGBUILD中的source URL"
     )
-    force_update_hash: bool = Field(
-        default=False, description="是否强制更新哈希值（即使版本未变化）"
-    )
 
     class Config:
         # 允许通过 . 访问属性
