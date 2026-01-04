@@ -12,6 +12,7 @@ from parsers.base_parser import BaseParser
 from parsers.qq import QQParser
 from parsers.navicat import NavicatPremiumCSParser
 from updater.pkgbuild_editor import PKGBUILDEditor
+from utils.downloader import Downloader
 
 
 class PackageUpdater:
@@ -24,6 +25,14 @@ class PackageUpdater:
             ParserEnum.QQ.value: QQParser(),
             ParserEnum.NAVICAT_PREMIUM_CS.value: NavicatPremiumCSParser(),
         }
+        # 初始化下载器（最大并发3个文件）
+        self.downloader = Downloader(
+            client=self.fetcher.client,
+            max_concurrent=3,
+            max_retries=3,
+            base_delay=1.0,
+            show_progress=True
+        )
         # 获取项目根目录（这里的项目根目录指更新脚本的根目录）
         # 当前脚本位于 scripts/core/，所以需要向上两级到达项目根目录
         self.project_root = Path(__file__).parent.parent
@@ -71,11 +80,11 @@ class PackageUpdater:
             print(f"  1. 从 {package_config.fetch_url} 获取版本信息...")
             response_data = await self.fetcher.fetch_text(package_config.fetch_url)
             if not response_data:
-                print(f"  错误: 无法获取版本信息")
+                print("  错误: 无法获取版本信息")
                 return False
 
             # 2. Parse阶段：解析版本号和下载URL
-            print(f"  2. 解析版本信息...")
+            print("  2. 解析版本信息...")
             parser = self.parsers.get(package_config.parser)
             if not parser:
                 print(f"  错误: 找不到解析器 {package_config.parser}")
@@ -83,7 +92,7 @@ class PackageUpdater:
 
             new_version = parser.parse_version(response_data)
             if not new_version:
-                print(f"  错误: 无法解析版本号")
+                print("  错误: 无法解析版本号")
                 return False
 
             print(f"  最新版本: {new_version}")
@@ -102,11 +111,14 @@ class PackageUpdater:
             print(f"  当前版本: {current_version}")
 
             if new_version == current_version:
-                print(f"  版本已是最新，无需更新")
-                return True
+                if package_config.force_update_hash:
+                    print("  版本未变化，但 force_update_hash=true，强制更新哈希值")
+                else:
+                    print("  版本已是最新，无需更新")
+                    return True
 
             # 4. 下载文件并计算校验和
-            print(f"  3. 下载文件并计算校验和...")
+            print("  3. 下载文件并计算校验和...")
             download_dir = Path(DOWNLOAD_DIR)
             download_dir.mkdir(exist_ok=True)
 
@@ -124,29 +136,54 @@ class PackageUpdater:
                     print(f"  警告: 无法获取 {arch.value} 架构的下载URL")
 
             if not arch_urls:
-                print(f"  错误: 无法获取任何架构的下载URL")
+                print("  错误: 无法获取任何架构的下载URL")
                 return False
 
-            # 下载各架构的文件并计算校验和
-            arch_checksums = {}
-            for arch, url in arch_urls.items():
-                filename = f"{package_name}_{new_version}_{arch}.deb"
-                file_path = download_dir / filename
+            # 使用并行下载
+            downloads = {
+                arch: (url, download_dir / f"{package_name}_{new_version}_{arch}.deb")
+                for arch, url in arch_urls.items()
+            }
 
-                print(f"    下载 {arch} 架构文件: {url}")
-                if not await self._download_file(url, file_path):
-                    print(f"    错误: 下载 {arch} 架构文件失败")
-                    return False
+            download_results = await self.downloader.download_all(downloads)
+
+            # 检查下载结果并计算校验和
+            arch_checksums = {}
+            failed_archs = []
+
+            for arch, result in download_results.items():
+                if not result.success:
+                    print(f"    错误: {arch} 架构下载失败: {result.error}")
+                    failed_archs.append(arch)
+                    continue
 
                 # 计算校验和
-                checksum = await self._calculate_checksum(file_path)
+                if result.file_path is None:
+                    print(f"    错误: {arch} 架构文件路径为空")
+                    failed_archs.append(arch)
+                    continue
+
+                checksum = await self._calculate_checksum(result.file_path)
                 arch_checksums[arch] = checksum
                 print(f"    {arch} 架构校验和: {checksum}")
 
+            if failed_archs:
+                print(f"  错误: {len(failed_archs)} 个架构下载失败: {failed_archs}")
+                return False
+
+            if not arch_checksums:
+                print("  错误: 没有成功下载任何架构的文件")
+                return False
+
             # 5. 更新PKGBUILD
-            print(f"  4. 更新PKGBUILD...")
-            editor.update_pkgver(new_version)
-            editor.update_pkgrel(1)  # 重置pkgrel为1
+            version_changed = new_version != current_version
+
+            if version_changed:
+                print("  4. 更新PKGBUILD版本和校验和...")
+                editor.update_pkgver(new_version)
+                editor.update_pkgrel(1)  # 重置pkgrel为1
+            else:
+                print("  4. 仅更新PKGBUILD校验和...")
 
             # 更新各架构的source和校验和
             for arch, url in arch_urls.items():
@@ -157,36 +194,13 @@ class PackageUpdater:
 
             # 保存PKGBUILD
             editor.save()
-            print(f"  5. PKGBUILD已更新")
+            print("  5. PKGBUILD已更新")
 
             print(f"包 {package_name} 更新完成!")
             return True
 
         except Exception as e:
             print(f"  错误: 更新包 {package_name} 时发生异常: {e}")
-            return False
-
-    async def _download_file(self, url: str, file_path: Path) -> bool:
-        """
-        下载文件
-
-        Args:
-            url: 下载URL
-            file_path: 保存路径
-
-        Returns:
-            下载是否成功
-        """
-        try:
-            response = await self.fetcher.client.get(url)
-            response.raise_for_status()
-
-            with open(file_path, "wb") as f:
-                f.write(response.content)
-
-            return True
-        except Exception as e:
-            print(f"下载文件失败: {e}")
             return False
 
     async def _calculate_checksum(self, file_path: Path) -> str:

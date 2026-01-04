@@ -8,6 +8,7 @@ packages:
     parser: QQParser
     pkgbuild: "packages/linuxqq-nt/PKGBUILD"
     update_source_url: true
+    force_update_hash: false
     arch:
       - x86_64
       - aarch64
@@ -22,6 +23,7 @@ packages:
     parser: NavicatPremiumCSParser
     pkgbuild: "packages/navicat17-premium-zh-cn/PKGBUILD"
     update_source_url: false
+    force_update_hash: true
     arch:
       - x86_64
       - aarch64

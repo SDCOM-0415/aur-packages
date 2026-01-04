@@ -1,11 +1,11 @@
 import hashlib
 from pathlib import Path
-from typing import Union
+
 from constants.constants import HashAlgorithmEnum
 
 
 def calculate_file_hash(
-    file_path: Union[str, Path], hash_algorithm: str = HashAlgorithmEnum.SHA512.value
+    file_path: str | Path, hash_algorithm: str = HashAlgorithmEnum.SHA512.value
 ) -> str:
     """
     计算文件的哈希值
@@ -48,7 +48,7 @@ def calculate_file_hash(
     return hash_func.hexdigest()
 
 
-def calculate_sha512(file_path: Union[str, Path]) -> str:
+def calculate_sha512(file_path: str | Path) -> str:
     """
     计算文件的SHA512哈希值
 
@@ -61,7 +61,7 @@ def calculate_sha512(file_path: Union[str, Path]) -> str:
     return calculate_file_hash(file_path, HashAlgorithmEnum.SHA512.value)
 
 
-def calculate_sha256(file_path: Union[str, Path]) -> str:
+def calculate_sha256(file_path: str | Path) -> str:
     """
     计算文件的SHA256哈希值
 
@@ -75,7 +75,7 @@ def calculate_sha256(file_path: Union[str, Path]) -> str:
 
 
 def calculate_multiple_hashes(
-    file_path: Union[str, Path], algorithms: list | None = None
+    file_path: str | Path, algorithms: list[str] | None = None
 ) -> dict[str, str]:
     """
     一次性计算文件的多种哈希值
@@ -98,7 +98,7 @@ def calculate_multiple_hashes(
 
 
 def verify_file_hash(
-    file_path: Union[str, Path],
+    file_path: str | Path,
     expected_hash: str,
     hash_algorithm: str = HashAlgorithmEnum.SHA512.value,
 ) -> bool:
@@ -122,7 +122,7 @@ def verify_file_hash(
 
 def download_and_verify(
     url: str,
-    destination: Union[str, Path],
+    destination: str | Path,
     expected_hash: str,
     hash_algorithm: str = HashAlgorithmEnum.SHA512.value,
 ) -> bool:

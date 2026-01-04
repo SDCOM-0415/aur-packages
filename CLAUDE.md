@@ -137,8 +137,118 @@ packages:
 - 测试文件位于 `scripts/tests/` 目录
 - 测试使用 `unittest.mock` 进行异步 HTTP 请求模拟
 
+## 代码规范
+
+### 类型注解（Type Hints）
+
+**重要**: 项目严格使用类型注解，所有函数和方法必须包含完整的类型注解。
+
+#### 基本规则
+
+1. **所有函数必须有返回类型注解**
+   ```python
+   # ✓ 正确
+   def get_version(url: str) -> str | None:
+       ...
+
+   # ✗ 错误（缺少返回类型）
+   def get_version(url: str):
+       ...
+   ```
+
+2. **所有参数必须有类型注解**
+   ```python
+   # ✓ 正确
+   async def download_file(url: str, path: Path, retries: int = 3) -> bool:
+       ...
+
+   # ✗ 错误（缺少参数类型）
+   async def download_file(url, path, retries = 3):
+       ...
+   ```
+
+3. **使用 Python 3.13+ 的现代类型注解语法**
+   ```python
+   # ✓ 使用 | 联合类型（Python 3.10+）
+   def parse_version(data: str | None) -> str | None:
+       ...
+
+   # ✓ 使用 list/dict 泛型（Python 3.9+）
+   def get_urls(arch: str) -> list[str]:
+       return []
+
+   def get_config() -> dict[str, str]:
+       return {}
+
+   # ✗ 避免（旧式语法）
+   from typing import List, Dict, Optional, Union
+   def parse_version(data: Union[str, None]) -> Optional[str]:
+       ...
+   ```
+
+4. **类属性和方法注解**
+   ```python
+   class PackageUpdater:
+       parsers: dict[str, BaseParser]  # 类属性类型注解
+
+       def __init__(self) -> None:  # __init__ 返回 None
+           self.config: ConfigLoader = ConfigLoader.load_from_yaml()
+
+       def update_package(self, name: str, config: PackageConfig) -> bool:
+           ...
+   ```
+
+5. **异步函数类型注解**
+   ```python
+   async def fetch_text(url: str) -> str | None:
+       ...
+
+   async def download_all(urls: dict[str, str]) -> dict[str, bool]:
+       ...
+   ```
+
+6. **复杂类型使用 typing 模块**
+   ```python
+   from typing import Callable, Any
+
+   def process_data(
+       data: dict[str, Any],
+       callback: Callable[[str], bool] | None = None
+   ) -> bool:
+       ...
+   ```
+
+#### 类型检查
+
+项目使用 **ty**（Astral 开发的快速 Python 类型检查器）进行静态类型检查：
+
+```bash
+# 运行类型检查
+uv run ty check
+
+# 检查特定文件或目录
+uv run ty check scripts/core/
+uv run ty check loaders/ utils/ fetcher/
+
+# 详细输出
+uv run ty check -v
+
+# 监视模式（自动重新检查）
+uv run ty check --watch
+```
+
+#### 类型存根文件
+
+对于第三方库缺少类型注解的情况，使用类型存根：
+
+```bash
+# 安装类型存根
+uv add --dev types-requests types-pyyaml
+```
+
 ## 注意事项
 
+- **项目严格使用类型注解**，所有函数必须包含完整的参数和返回类型注解
 - **项目使用 uv 统一管理运行环境，禁止显式使用 `python` 命令**
 - 项目使用绝对导入（`from cli.cli import update_main`），而不是相对导入
 - Python 版本要求 >= 3.13
