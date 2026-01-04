@@ -8,18 +8,9 @@ def calculate_file_hash(
     file_path: str | Path, hash_algorithm: str = HashAlgorithmEnum.SHA512.value
 ) -> str:
     """
-    计算文件的哈希值
+    计算文件哈希值
 
-    Args:
-        file_path: 文件路径
-        hash_algorithm: 哈希算法，支持 'sha256', 'sha512'
-
-    Returns:
-        文件的哈希值字符串
-
-    Raises:
-        FileNotFoundError: 如果文件不存在
-        ValueError: 如果不支持指定的哈希算法
+    支持 SHA256 和 SHA512 算法，分块读取大文件避免内存占用过高
     """
     file_path = Path(file_path)
 
@@ -48,32 +39,10 @@ def calculate_file_hash(
     return hash_func.hexdigest()
 
 
-def calculate_sha256(file_path: str | Path) -> str:
-    """
-    计算文件的SHA256哈希值
-
-    Args:
-        file_path: 文件路径
-
-    Returns:
-        文件的SHA256哈希值字符串
-    """
-    return calculate_file_hash(file_path, HashAlgorithmEnum.SHA256.value)
-
-
 def calculate_multiple_hashes(
     file_path: str | Path, algorithms: list[str] | None = None
 ) -> dict[str, str]:
-    """
-    一次性计算文件的多种哈希值
-
-    Args:
-        file_path: 文件路径
-        algorithms: 要计算的哈希算法列表，默认为 ['sha256', 'sha512']
-
-    Returns:
-        包含各种哈希值的字典，键为算法名，值为哈希值
-    """
+    """一次性计算文件的多种哈希值"""
     if algorithms is None:
         algorithms = [HashAlgorithmEnum.SHA256.value, HashAlgorithmEnum.SHA512.value]
 
@@ -89,17 +58,7 @@ def verify_file_hash(
     expected_hash: str,
     hash_algorithm: str = HashAlgorithmEnum.SHA512.value,
 ) -> bool:
-    """
-    验证文件的哈希值是否匹配预期值
-
-    Args:
-        file_path: 文件路径
-        expected_hash: 预期的哈希值
-        hash_algorithm: 哈希算法，默认为 'sha512'
-
-    Returns:
-        如果哈希值匹配返回True，否则返回False
-    """
+    """验证文件哈希值是否匹配预期值"""
     try:
         actual_hash = calculate_file_hash(file_path, hash_algorithm)
         return actual_hash.lower() == expected_hash.lower()
@@ -113,18 +72,7 @@ def download_and_verify(
     expected_hash: str,
     hash_algorithm: str = HashAlgorithmEnum.SHA512.value,
 ) -> bool:
-    """
-    下载文件并验证其哈希值
-
-    Args:
-        url: 下载URL
-        destination: 保存路径
-        expected_hash: 预期的哈希值
-        hash_algorithm: 哈希算法，默认为 'sha512'
-
-    Returns:
-        如果下载成功且哈希值匹配返回True，否则返回False
-    """
+    """下载文件并验证哈希值，失败时自动清理"""
     import httpx
 
     destination = Path(destination)
@@ -148,43 +96,8 @@ def download_and_verify(
 
 
 def format_checksum_for_pkgbuild(checksum: str, arch: str | None = None) -> str:
-    """
-    格式化校验和以用于PKGBUILD文件
-
-    Args:
-        checksum: 校验和字符串
-        arch: 架构名称，如果为None则返回通用格式
-
-    Returns:
-        格式化后的校验和字符串，适用于PKGBUILD文件
-    """
+    """格式化校验和为 PKGBUILD 语法"""
     if arch:
         return f"{HashAlgorithmEnum.SHA512.value}sums_{arch}=('{checksum}')"
     else:
         return f"{HashAlgorithmEnum.SHA512.value}sums=('{checksum}')"
-
-
-def format_multiple_checksums_for_pkgbuild(
-    checksums: dict[str, str], generic_checksum: str | None = None
-) -> dict[str, str]:
-    """
-    格式化多个校验和以用于PKGBUILD文件
-
-    Args:
-        checksums: 各架构的校验和，键为架构名，值为校验和
-        generic_checksum: 通用校验和
-
-    Returns:
-        格式化后的校验和字典，适用于PKGBUILD文件
-    """
-    result = {}
-
-    # 添加各架构的校验和
-    for arch, checksum in checksums.items():
-        result[f"sha512sums_{arch}"] = f"('{checksum}')"
-
-    # 添加通用校验和
-    if generic_checksum:
-        result["sha512sums"] = f"('{generic_checksum}')"
-
-    return result

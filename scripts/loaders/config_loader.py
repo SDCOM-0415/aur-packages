@@ -5,24 +5,23 @@ from constants.constants import ArchEnum
 
 
 class PackageConfig(BaseModel):
-    name: str = Field(..., description="name")
+    """包配置模型"""
+
+    name: str
     source: str
     fetch_url: str
     upstream: str
     parser: str
     pkgbuild: str
-    arch: list[str] = Field(default_factory=list, description="支持的架构列表")
-    update_source_url: bool = Field(
-        default=True, description="是否更新PKGBUILD中的source URL"
-    )
+    arch: list[str] = Field(default_factory=list)
+    update_source_url: bool = Field(default=True)
 
     class Config:
-        # 允许通过 . 访问属性
         extra = "ignore"
         validate_by_name = True
 
     def get_supported_archs(self) -> list[ArchEnum]:
-        """获取支持的架构枚举列表"""
+        """将字符串架构列表转换为 ArchEnum 列表"""
         supported_archs = []
         for arch_str in self.arch:
             for arch_enum in ArchEnum:
@@ -33,6 +32,8 @@ class PackageConfig(BaseModel):
 
 
 class ConfigLoader(BaseModel):
+    """配置加载器，管理所有包配置"""
+
     packages: dict[str, PackageConfig]
 
     class Config:
@@ -40,7 +41,7 @@ class ConfigLoader(BaseModel):
 
     @classmethod
     def load_from_yaml(cls, filepath: str = "packages.yaml") -> "ConfigLoader":
-        """从 YAML 文件加载"""
+        """从 YAML 文件加载配置"""
         with open(filepath, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls(**data)

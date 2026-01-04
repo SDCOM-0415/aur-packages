@@ -23,10 +23,10 @@ def parse_version(version: str) -> list[str]:
         ['17', '3', '5']
     """
     # 移除常见的前缀（如 v, V, r, R 等）
-    version = version.lstrip('vVrR')
+    version = version.lstrip("vVrR")
 
     # 按照分隔符分割：., -, _, ~
-    parts = split(r'[.\-~_]', version)
+    parts = split(r"[.\-~_]", version)
 
     # 过滤空字符串
     return [p for p in parts if p]

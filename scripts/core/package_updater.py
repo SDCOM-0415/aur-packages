@@ -33,7 +33,7 @@ class PackageUpdater:
             max_concurrent=3,
             max_retries=3,
             base_delay=1.0,
-            show_progress=True
+            show_progress=True,
         )
         # 获取项目根目录（这里的项目根目录指更新脚本的根目录）
         # 当前脚本位于 scripts/core/，所以需要向上两级到达项目根目录
@@ -63,22 +63,9 @@ class PackageUpdater:
         return full_path
 
     async def _fetch_arch_urls(
-        self,
-        parser: BaseParser,
-        supported_archs: list,
-        response_data: str
+        self, parser: BaseParser, supported_archs: list, response_data: str
     ) -> dict[str, str]:
-        """
-        获取所有架构的下载 URL
-
-        Args:
-            parser: 解析器实例
-            supported_archs: 支持的架构列表
-            response_data: 响应数据
-
-        Returns:
-            {arch: url} 字典
-        """
+        """获取所有架构的下载 URL"""
         arch_urls = {}
         for arch in supported_archs:
             url = parser.parse_url(arch, response_data)
@@ -95,23 +82,18 @@ class PackageUpdater:
         arch_urls: dict[str, str],
         verify_only: bool = False,
     ) -> tuple[dict[str, str], bool]:
-        """
-        下载文件并可选地验证哈希
-
-        Args:
-            package_name: 包名
-            new_version: 新版本号
-            arch_urls: {arch: url} 字典
-            verify_only: 是否仅验证（不返回失败）
-
-        Returns:
-            (checksums, success) 元组
-        """
+        """下载文件并计算校验和"""
         download_dir = Path(DOWNLOAD_DIR)
         download_dir.mkdir(exist_ok=True)
 
         downloads = {
-            arch: (url, download_dir / generate_download_filename(package_name, new_version, arch, url, default_extension=".deb"))
+            arch: (
+                url,
+                download_dir
+                / generate_download_filename(
+                    package_name, new_version, arch, url, default_extension=".deb"
+                ),
+            )
             for arch, url in arch_urls.items()
         }
 
@@ -151,27 +133,18 @@ class PackageUpdater:
     async def update_package(
         self, package_name: str, package_config: PackageConfig
     ) -> bool:
-        """
-        更新单个包
-
-        Args:
-            package_name: 包名
-            package_config: 包配置
-
-        Returns:
-            更新是否成功
-        """
+        """更新单个包"""
         print(f"开始更新包: {package_name}")
 
         try:
-            # 1. Fetch阶段：获取最新版本信息
+            # 1. 获取最新版本信息
             print(f"  1. 从 {package_config.fetch_url} 获取版本信息...")
             response_data = await self.fetcher.fetch_text(package_config.fetch_url)
             if not response_data:
                 print("  错误: 无法获取版本信息")
                 return False
 
-            # 2. Parse阶段：解析版本号和下载URL
+            # 2. 解析版本号和下载 URL
             print("  2. 解析版本信息...")
             parser = self.parsers.get(package_config.parser)
             if not parser:
@@ -200,21 +173,30 @@ class PackageUpdater:
             # 获取包支持的架构
             supported_archs = package_config.get_supported_archs()
 
-            # 版本比较：检查是否需要更新
+            # 版本比较
             version_comparison = compare_versions(new_version, current_version)
 
             if version_comparison <= 0:
-                # 当前版本 >= 新版本，无需更新 PKGBUILD
-                # 但仍需下载并验证哈希数据（使用当前版本URL）
+                # 当前版本 >= 新版本，仅验证哈希
                 return await self._handle_version_not_newer(
-                    package_name, new_version, current_version,
-                    parser, supported_archs, response_data
+                    package_name,
+                    new_version,
+                    current_version,
+                    parser,
+                    supported_archs,
+                    response_data,
                 )
 
-            # 版本更新：正常更新流程（version_comparison > 0）
+            # 版本更新流程
             return await self._handle_version_update(
-                package_name, new_version, current_version,
-                editor, parser, supported_archs, response_data, package_config
+                package_name,
+                new_version,
+                current_version,
+                editor,
+                parser,
+                supported_archs,
+                response_data,
+                package_config,
             )
 
         except Exception as e:
@@ -236,17 +218,6 @@ class PackageUpdater:
         两种场景：
         1. 当前版本 > 新版本：版本降级，仅验证哈希
         2. 当前版本 = 新版本：版本相同，检查哈希变化并更新 pkgrel
-
-        Args:
-            package_name: 包名
-            new_version: 新版本号
-            current_version: 当前版本号
-            parser: 解析器实例
-            supported_archs: 支持的架构列表
-            response_data: 响应数据
-
-        Returns:
-            是否处理成功
         """
         version_comparison = compare_versions(new_version, current_version)
 
@@ -256,7 +227,9 @@ class PackageUpdater:
             print("  说明: 当前包版本较新，无需降级")
             print("  注意: 仍将下载并验证哈希数据...")
 
-            arch_urls = await self._fetch_arch_urls(parser, supported_archs, response_data)
+            arch_urls = await self._fetch_arch_urls(
+                parser, supported_archs, response_data
+            )
             if not arch_urls:
                 print("  错误: 无法获取任何架构的下载URL")
                 return False
@@ -268,65 +241,64 @@ class PackageUpdater:
             print(f"  包 {package_name} 验证完成（未更新 PKGBUILD）")
             return True
 
-        else:  # version_comparison == 0
-            # 当前版本 = 新版本：检查哈希变化
-            print("  版本未变化，检查文件哈希是否变化...")
+        # 当前版本 = 新版本：检查哈希变化
+        print("  版本未变化，检查文件哈希是否变化...")
 
-            # 获取当前 PKGBUILD 中的哈希值
-            pkgbuild_path = self._get_pkgbuild_path(
-                self.config.packages[package_name].pkgbuild
-            )
-            editor = PKGBUILDEditor(pkgbuild_path)
+        # 获取当前 PKGBUILD 中的哈希值
+        pkgbuild_path = self._get_pkgbuild_path(
+            self.config.packages[package_name].pkgbuild
+        )
+        editor = PKGBUILDEditor(pkgbuild_path)
 
-            current_checksums = {}
-            for arch in supported_archs:
-                current_checksum = editor.get_checksum(arch.value)
-                if current_checksum:
-                    current_checksums[arch.value] = current_checksum
+        current_checksums = {}
+        for arch in supported_archs:
+            current_checksum = editor.get_checksum(arch.value)
+            if current_checksum:
+                current_checksums[arch.value] = current_checksum
+            else:
+                print(f"  警告: 无法获取 {arch.value} 架构的当前哈希值")
+
+        # 下载并计算新哈希值
+        arch_urls = await self._fetch_arch_urls(parser, supported_archs, response_data)
+        if not arch_urls:
+            print("  错误: 无法获取任何架构的下载URL")
+            return False
+
+        new_checksums, success = await self._download_and_verify(
+            package_name, new_version, arch_urls
+        )
+        if not success:
+            return False
+
+        # 比较哈希值
+        hash_changed = False
+        for arch, new_checksum in new_checksums.items():
+            if arch in current_checksums:
+                if current_checksums[arch] != new_checksum:
+                    print(f"  检测到 {arch} 架构的文件哈希已变化")
+                    hash_changed = True
                 else:
-                    print(f"  警告: 无法获取 {arch.value} 架构的当前哈希值")
+                    print(f"  {arch} 架构的文件哈希未变化")
 
-            # 下载并计算新哈希值
-            arch_urls = await self._fetch_arch_urls(parser, supported_archs, response_data)
-            if not arch_urls:
-                print("  错误: 无法获取任何架构的下载URL")
-                return False
-
-            new_checksums, success = await self._download_and_verify(
-                package_name, new_version, arch_urls
-            )
-            if not success:
-                return False
-
-            # 比较哈希值
-            hash_changed = False
-            for arch, new_checksum in new_checksums.items():
-                if arch in current_checksums:
-                    if current_checksums[arch] != new_checksum:
-                        print(f"  检测到 {arch} 架构的文件哈希已变化")
-                        hash_changed = True
-                    else:
-                        print(f"  {arch} 架构的文件哈希未变化")
-
-            if not hash_changed:
-                print("  所有架构的文件哈希均未变化，无需更新")
-                return True
-
-            # 哈希已变化，自增 pkgrel
-            print("  文件哈希已变化，更新 pkgrel 和校验和...")
-            current_pkgrel = editor.get_pkgrel()
-            new_pkgrel = current_pkgrel + 1
-            print(f"  pkgrel: {current_pkgrel} → {new_pkgrel}")
-
-            editor.update_pkgrel(new_pkgrel)
-
-            # 更新校验和（不更新 source URL，因为版本未变）
-            for arch, checksum in new_checksums.items():
-                editor.update_arch_checksum(arch, checksum)
-
-            editor.save()
-            print(f"  包 {package_name} 的 pkgrel 已更新（版本未变但哈希已变）")
+        if not hash_changed:
+            print("  所有架构的文件哈希均未变化，无需更新")
             return True
+
+        # 哈希已变化，自增 pkgrel
+        print("  文件哈希已变化，更新 pkgrel 和校验和...")
+        current_pkgrel = editor.get_pkgrel()
+        new_pkgrel = current_pkgrel + 1
+        print(f"  pkgrel: {current_pkgrel} → {new_pkgrel}")
+
+        editor.update_pkgrel(new_pkgrel)
+
+        # 更新校验和（不更新 source URL，因为版本未变）
+        for arch, checksum in new_checksums.items():
+            editor.update_arch_checksum(arch, checksum)
+
+        editor.save()
+        print(f"  包 {package_name} 的 pkgrel 已更新（版本未变但哈希已变）")
+        return True
 
     async def _handle_version_update(
         self,
@@ -339,7 +311,7 @@ class PackageUpdater:
         response_data: str,
         package_config: PackageConfig,
     ) -> bool:
-        """处理版本更新情况"""
+        """处理版本更新流程"""
         print("  3. 下载文件并计算校验和...")
         print(f"  支持的架构: {[arch.value for arch in supported_archs]}")
 
@@ -355,7 +327,7 @@ class PackageUpdater:
             return False
 
         # 更新 PKGBUILD
-        print("  4. 更新PKGBUILD版本和校验和...")
+        print("  4. 更新 PKGBUILD 版本和校验和...")
         editor.update_pkgver(new_version)
         editor.update_pkgrel(1)  # 重置 pkgrel 为 1
 
@@ -366,21 +338,13 @@ class PackageUpdater:
             editor.update_arch_checksum(arch, checksums[arch])
 
         editor.save()
-        print("  5. PKGBUILD已更新")
+        print("  5. PKGBUILD 已更新")
 
         print(f"包 {package_name} 更新完成!")
         return True
 
     async def _calculate_checksum(self, file_path: Path) -> str:
-        """
-        计算文件的校验和
-
-        Args:
-            file_path: 文件路径
-
-        Returns:
-            SHA512校验和
-        """
+        """计算文件的 SHA512 校验和"""
         from utils.hash import calculate_file_hash
         from constants.constants import HashAlgorithmEnum
 
@@ -403,15 +367,7 @@ class PackageUpdater:
         print(f"更新完成: {success_count}/{total_count} 个包更新成功")
 
     async def update_single_package(self, package_name: str) -> bool:
-        """
-        更新单个指定的包
-
-        Args:
-            package_name: 要更新的包名
-
-        Returns:
-            更新是否成功
-        """
+        """更新单个指定的包"""
         if package_name not in self.config.packages:
             print(f"错误: 包 '{package_name}' 不在配置中")
             return False

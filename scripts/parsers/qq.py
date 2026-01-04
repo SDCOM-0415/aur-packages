@@ -1,20 +1,16 @@
+import re
+import json
 from typing import Any
-import re, json
 from constants.constants import ArchEnum
 from .base_parser import BaseParser
 
 
 class QQParser(BaseParser):
-    def parse_version(self, response_data: str | Any) -> str | None:
-        """
-        解析QQ响应数据，提取版本号
+    """QQ Linux 版本解析器"""
 
-        Args:
-            response_data: API响应数据
-        Returns:
-            版本号字符串，如果解析失败则返回None
-        """
-        url = self.parse_url(ArchEnum.X86_64, response_data)  # 默认使用x86_64架构
+    def parse_version(self, response_data: str | Any) -> str | None:
+        """从 QQ 响应数据中提取版本号"""
+        url = self.parse_url(ArchEnum.X86_64, response_data)
         if not url:
             return None
         pattern = r"QQ_([\d._]+)_amd64"
@@ -24,16 +20,7 @@ class QQParser(BaseParser):
         return None
 
     def parse_url(self, arch: ArchEnum | str, response_data: str | Any) -> str | None:
-        """
-        解析QQ响应数据，提取deb包URL
-
-        Args:
-            arch: 架构名称或枚举
-            response_data: API响应数据
-        Returns:
-            deb包URL字符串，如果解析失败则返回None
-        """
-        # 如果传入的是枚举，获取其值
+        """从 QQ 响应数据中提取指定架构的下载 URL"""
         arch_value = arch.value if isinstance(arch, ArchEnum) else arch
 
         pattern = r"var params\s*=\s*(\{.*?\});"

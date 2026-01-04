@@ -10,9 +10,7 @@ DEFAULT_HEADERS = {
 
 
 class Fetcher:
-    """
-    负责底层 HTTP 请求，不关心版本号解析，也不关心包来源。
-    """
+    """HTTP 客户端封装，处理网络请求"""
 
     def __init__(
         self, timeout: int = 10, headers: dict[str, str] | None = None
@@ -26,9 +24,6 @@ class Fetcher:
     async def fetch_json(
         self, url: str, headers: dict[str, str] | None = None
     ) -> Any | None:
-        """
-        请求 URL 返回 JSON 数据
-        """
         try:
             response = await self.client.get(url, headers=headers)
             response.raise_for_status()
@@ -40,9 +35,6 @@ class Fetcher:
     async def fetch_text(
         self, url: str, headers: dict[str, str] | None = None
     ) -> str | None:
-        """
-        请求 URL 返回文本数据
-        """
         try:
             response = await self.client.get(url, headers=headers)
             response.raise_for_status()

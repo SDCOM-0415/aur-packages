@@ -13,6 +13,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class DownloadResult:
     """下载结果（不可变）"""
+
     arch: str
     success: bool
     file_path: Path | None = None
@@ -84,7 +85,9 @@ class Downloader:
                 if attempt > 0:
                     delay = self.base_delay * (2 ** (attempt - 1))
                     if self.show_progress:
-                        print(f"    [{arch}] 重试 {attempt}/{self.max_retries} (延迟 {delay:.1f}s)...")
+                        print(
+                            f"    [{arch}] 重试 {attempt}/{self.max_retries} (延迟 {delay:.1f}s)..."
+                        )
                     await asyncio.sleep(delay)
 
                 start_time = time.perf_counter()
@@ -97,7 +100,9 @@ class Downloader:
                     downloaded_size = 0
 
                     with file_path.open("wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=self.chunk_size):
+                        async for chunk in response.aiter_bytes(
+                            chunk_size=self.chunk_size
+                        ):
                             f.write(chunk)
                             downloaded_size += len(chunk)
 
@@ -159,7 +164,9 @@ class Downloader:
             return {}
 
         if self.show_progress:
-            print(f"\n  并行下载 {len(downloads)} 个文件（并发: {self.max_concurrent}）...")
+            print(
+                f"\n  并行下载 {len(downloads)} 个文件（并发: {self.max_concurrent}）..."
+            )
 
         results: dict[str, DownloadResult] = {}
 
