@@ -105,3 +105,50 @@ jobs:
               cd -
             fi
           done
+
+      # 提交 packages 文件夹的更新到本仓库
+      - name: Commit PKGBUILD updates to repository
+        run: |
+          # 配置 Git
+          git config user.name "GitHub Actions"
+          git config user.email "github-actions@github.com"
+
+          # 检查是否有变更
+          if git diff --quiet packages/; then
+            echo "✅ packages/ 目录无变更，跳过提交"
+          else
+            echo "📦 检测到 packages/ 目录有变更，准备提交..."
+
+            # 添加所有 packages 目录的变更
+            git add packages/
+
+            # 生成提交信息
+            COMMIT_MSG="chore(packages): :package: 自动更新 PKGBUILD 文件\n\n"
+            COMMIT_MSG+="更新时间: $(date -u +"%Y-%m-%d %H:%M:%S UTC")\n\n"
+            COMMIT_MSG+="已更新的包:\n"
+
+            # 列出所有更新的包
+            for pkg in packages/*/; do
+              if [ -f "$pkg/PKGBUILD" ]; then
+                pkgname=$(basename "$pkg")
+                if git diff --cached --quiet "$pkg" --; then
+                  # 这个包没有变更，跳过
+                  :
+                else
+                  # 这个包有变更
+                  version=$(grep "^pkgver=" "$pkg/PKGBUILD" | cut -d= -f2)
+                  pkgrel=$(grep "^pkgrel=" "$pkg/PKGBUILD" | cut -d= -f2)
+                  COMMIT_MSG+="- ${pkgname} (版本: ${version}, 发布: ${pkgrel})\n"
+                fi
+              fi
+            done
+
+            # 提交变更
+            echo -e "$COMMIT_MSG" | git commit -F -
+
+            # 推送变更
+            echo "🚀 推送变更到仓库..."
+            git push
+
+            echo "✅ 变更已成功提交并推送"
+          fi
