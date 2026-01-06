@@ -1,0 +1,3 @@
+[submodule "packages/navicat17-premium-zh-cn"]
+	path = packages/navicat17-premium-zh-cn
+	url = https://aur.archlinux.org/navicat17-premium-zh-cn.git
