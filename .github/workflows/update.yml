@@ -1,154 +1,101 @@
 name: Update AUR Packages
+
 on:
   schedule:
     - cron: '0 18 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
-    defaults:
-      run:
-        # 默认工作目录设为仓库根（用于构建步骤）
-        working-directory: ${{ github.workspace }}
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 安装必要工具
-      - name: Setup system packages
+      - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git openssh sudo curl
+          pacman -Syu --noconfirm --needed
+          pacman -S --noconfirm --needed base-devel git openssh curl
 
-      # 使用官方 action 安装 uv + Python 3.13（自动添加 PATH，无需手动 export）
-      - name: Setup uv & Python 3.13
+      - name: Setup Python
         uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.13'
-          enable-cache: true  # 启用 uv 缓存，加速依赖安装
+          enable-cache: true
+          cache-dependency-glob: 'scripts/pyproject.toml'
 
-      # 使用 uv 安装 Python 依赖（切换到 scripts 目录）
-      - name: Setup Python dependencies
-        working-directory: scripts  # 关键修复：指定项目目录
-        run: |
-          if [ -f "pyproject.toml" ]; then
-            echo "Found pyproject.toml, syncing dependencies..."
-            ls -la  # 调试：列出 scripts 目录文件
-            uv sync
-          else
-            echo "Error: pyproject.toml not found in scripts/!"
-            echo "Available files in scripts/:"
-            ls -la
-            echo "This workflow requires pyproject.toml in scripts/ for Python dependency management."
-            exit 1
-          fi
+      - name: Install Python dependencies
+        working-directory: scripts
+        run: uv sync
 
-      # 运行更新脚本（也在 scripts 目录，确保 main.py 正确执行）
-      - name: Run main update script
-        working-directory: scripts  # 关键修复：统一目录
-        run: |
-          uv run main.py
+      - name: Run update script
+        working-directory: scripts
+        run: uv run main.py --all
 
-      # 创建非 root 构建用户
-      - name: Create build user
+      - name: Setup build user and SSH
         run: |
-          useradd -m builduser
+          useradd -m -G wheel builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
-          passwd -d builduser
 
-      # SSH 配置用于 push AUR
-      - name: Setup SSH for AUR
-        run: |
           sudo -u builduser mkdir -p /home/builduser/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" | sudo -u builduser tee /home/builduser/.ssh/id_ed25519 >/dev/null
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" | sudo -u builduser tee /home/builduser/.ssh/id_ed25519 > /dev/null
           sudo -u builduser chmod 600 /home/builduser/.ssh/id_ed25519
           sudo -u builduser ssh-keyscan aur.archlinux.org >> /home/builduser/.ssh/known_hosts
 
-      # builduser 构建目录权限
-      - name: Configure makepkg for builduser
-        run: |
-          cp /etc/makepkg.conf /home/builduser/makepkg.conf
-          sed -i 's|^#*\s*BUILDDIR=.*|BUILDDIR=/home/builduser/build|' /home/builduser/makepkg.conf
-          sed -i 's|^#*\s*PKGDEST=.*|PKGDEST=/home/builduser/pkgdest|' /home/builduser/makepkg.conf
-          sed -i 's|^#*\s*SRCDEST=.*|SRCDEST=/home/builduser/srcdest|' /home/builduser/makepkg.conf
-          mkdir -p /home/builduser/build /home/builduser/pkgdest /home/builduser/srcdest
-          chown -R builduser:builduser /home/builduser
-
-      # 构建 + 推送所有包（在根目录循环 packages/*，main.py 更新后这里构建）
-      - name: Build & Push AUR packages
+      - name: Build and push to AUR
         run: |
           set -e
-          export MAKEPKG_CONF=/home/builduser/makepkg.conf
+
           for pkg in packages/*; do
-            if [ -f "$pkg/PKGBUILD" ]; then
-              echo "=== Processing: $pkg ==="
-              pkgname=$(basename "$pkg")
-              aur_repo="ssh://aur@aur.archlinux.org/${pkgname}.git"
-              cd "$pkg"
-              echo "生成 .SRCINFO..."
-              sudo -u builduser MAKEPKG_CONF=$MAKEPKG_CONF makepkg --printsrcinfo > .SRCINFO
-              echo "构建测试 $pkgname ..."
-              sudo -u builduser MAKEPKG_CONF=$MAKEPKG_CONF makepkg -fs --noconfirm
-              cd ../../
-              # 克隆 AUR 仓库
-              sudo -u builduser git clone "$aur_repo" "/home/builduser/aur-$pkgname"
-              # 复制所有文件（包含隐藏文件）
-              sudo -u builduser cp -a "$pkg"/. "/home/builduser/aur-$pkgname/"
-              cd "/home/builduser/aur-$pkgname"
-              sudo -u builduser git config user.email "github-actions@github.com"
-              sudo -u builduser git config user.name "GitHub Actions"
-              sudo -u builduser git add -A
-              sudo -u builduser git commit -m "Update: $(date -u +"%Y-%m-%d")" || echo "No changes"
-              sudo -u builduser git push || echo "Nothing to push"
-              cd -
+            [ -f "$pkg/PKGBUILD" ] || continue
+
+            pkgname=$(basename "$pkg")
+            echo "Processing $pkgname..."
+
+            # 在子模块目录中操作
+            cd "$pkg"
+
+            # 生成 .SRCINFO
+            sudo -u builduser makepkg --printsrcinfo > .SRCINFO
+
+            # 构建测试
+            sudo -u builduser makepkg -fs --noconfirm
+
+            # 提交修改到子模块
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add -A
+
+            if ! git diff --staged --quiet; then
+              version=$(grep '^pkgver=' PKGBUILD | cut -d= -f2 | tr -d '"'"'')
+              git commit -m "Update to $version"
+              git push origin HEAD
+              echo "Updated $pkgname to $version"
             fi
+
+            cd -
           done
 
-      # 提交 packages 文件夹的更新到本仓库
-      - name: Commit PKGBUILD updates to repository
+      - name: Update submodule references and push to main repo
         run: |
-          # 配置 Git
-          git config user.name "GitHub Actions"
-          git config user.email "github-actions@github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 检查是否有变更
-          if git diff --quiet packages/; then
-            echo "✅ packages/ 目录无变更，跳过提交"
-          else
-            echo "📦 检测到 packages/ 目录有变更，准备提交..."
+          # 添加子模块的最新引用
+          git add packages/
 
-            # 添加所有 packages 目录的变更
-            git add packages/
-
-            # 生成提交信息
-            COMMIT_MSG="chore(packages): :package: 自动更新 PKGBUILD 文件\n\n"
-            COMMIT_MSG+="更新时间: $(date -u +"%Y-%m-%d %H:%M:%S UTC")\n\n"
-            COMMIT_MSG+="已更新的包:\n"
-
-            # 列出所有更新的包
-            for pkg in packages/*/; do
-              if [ -f "$pkg/PKGBUILD" ]; then
-                pkgname=$(basename "$pkg")
-                if git diff --cached --quiet "$pkg" --; then
-                  # 这个包没有变更，跳过
-                  :
-                else
-                  # 这个包有变更
-                  version=$(grep "^pkgver=" "$pkg/PKGBUILD" | cut -d= -f2)
-                  pkgrel=$(grep "^pkgrel=" "$pkg/PKGBUILD" | cut -d= -f2)
-                  COMMIT_MSG+="- ${pkgname} (版本: ${version}, 发布: ${pkgrel})\n"
-                fi
-              fi
-            done
-
-            # 提交变更
-            echo -e "$COMMIT_MSG" | git commit -F -
-
-            # 推送变更
-            echo "🚀 推送变更到仓库..."
+          # 如果有变更，提交并推送
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update AUR submodules"
             git push
-
-            echo "✅ 变更已成功提交并推送"
           fi
