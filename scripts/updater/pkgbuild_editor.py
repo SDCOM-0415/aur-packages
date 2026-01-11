@@ -1,12 +1,11 @@
+"""PKGBUILD 文件编辑器模块"""
+
 import re
 from pathlib import Path
 from typing import Union
 
 from constants.constants import HashAlgorithmEnum
-from utils.hash import (
-    calculate_file_hash,
-    verify_file_hash,
-)
+from utils.hash import calculate_file_hash, verify_file_hash
 
 
 class PKGBUILDEditor:
@@ -18,12 +17,12 @@ class PKGBUILDEditor:
         self._load_content()
 
     def _load_content(self) -> None:
-        """加载PKGBUILD文件内容"""
+        """加载 PKGBUILD 文件内容"""
         with open(self.pkgbuild_path, "r", encoding="utf-8") as f:
             self.content = f.read()
 
     def _save_content(self) -> None:
-        """保存PKGBUILD文件内容"""
+        """保存 PKGBUILD 文件内容"""
         with open(self.pkgbuild_path, "w", encoding="utf-8") as f:
             f.write(self.content)
 
@@ -44,7 +43,6 @@ class PKGBUILDEditor:
         if new_epoch is None:
             return
 
-        # 检查 epoch 字段是否存在
         if re.search(r"^epoch=.*$", self.content, flags=re.MULTILINE):
             pattern = r"^epoch=.*$"
             replacement = f"epoch={new_epoch}"
@@ -52,7 +50,6 @@ class PKGBUILDEditor:
                 pattern, replacement, self.content, flags=re.MULTILINE
             )
         else:
-            # 不存在则添加
             pattern = r"^(pkgver=.*)$"
             replacement = f"epoch={new_epoch}\n\1"
             self.content = re.sub(
@@ -121,11 +118,9 @@ class PKGBUILDEditor:
         self.update_pkgver(new_version)
         self.update_pkgrel(new_pkgrel)
 
-        # 更新 epoch（如果提供）
         if new_epoch:
             self.update_epoch(new_epoch)
 
-        # 更新通用校验和（如果提供）
         if generic_checksum:
             if hash_algorithm == HashAlgorithmEnum.SHA512.value:
                 self.update_sha512sums(generic_checksum)
@@ -136,7 +131,6 @@ class PKGBUILDEditor:
                     pattern, replacement, self.content, flags=re.MULTILINE
                 )
 
-        # 更新各架构的校验和和 URL
         for arch, checksum in new_checksums.items():
             self.update_arch_checksum(arch, checksum, hash_algorithm)
 

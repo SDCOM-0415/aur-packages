@@ -1,3 +1,5 @@
+"""配置文件加载模块"""
+
 import yaml
 from pydantic import BaseModel, Field
 
@@ -5,19 +7,13 @@ from constants.constants import ArchEnum
 
 
 class DownloadSettings(BaseModel):
-    """下载设置模型"""
+    """下载配置"""
 
-    # 单个包的多架构并行下载数量
     max_concurrent: int = 3
-    # 下载重试次数
     max_retries: int = 3
-    # 重试基础延迟（秒）
     base_delay: float = 1.0
-    # 下载超时时间（秒）
     timeout: int = 30
-    # 下载块大小（字节）
     chunk_size: int = 8192
-    # 是否显示进度条
     show_progress: bool = True
 
     class Config:
@@ -25,7 +21,7 @@ class DownloadSettings(BaseModel):
 
 
 class Settings(BaseModel):
-    """全局设置模型"""
+    """全局配置"""
 
     download: DownloadSettings = Field(default_factory=DownloadSettings)
 
@@ -34,7 +30,7 @@ class Settings(BaseModel):
 
 
 class PackageConfig(BaseModel):
-    """包配置模型"""
+    """单个包的配置"""
 
     name: str
     source: str
@@ -44,7 +40,7 @@ class PackageConfig(BaseModel):
     pkgbuild: str
     arch: list[str] = Field(default_factory=list)
     update_source_url: bool = Field(default=True)
-    enable: bool = Field(default=True)  # 包开关，默认启用
+    enable: bool = Field(default=True)
 
     class Config:
         extra = "ignore"

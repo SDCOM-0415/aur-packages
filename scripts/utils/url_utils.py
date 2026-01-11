@@ -1,7 +1,7 @@
-"""URL 解析工具"""
+"""URL 解析工具模块"""
 
-from urllib.parse import urlparse
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def extract_filename_from_url(url: str) -> str:
@@ -13,12 +13,9 @@ def extract_filename_from_url(url: str) -> str:
     parsed_url = urlparse(url)
     path = parsed_url.path
 
-    # 从路径中提取文件名
     filename = Path(path).name
 
-    # 如果无法提取文件名，使用 URL 的最后一部分
     if not filename:
-        # 移除查询参数和片段
         filename = path.split("?")[0].split("#")[0]
         filename = filename.rstrip("/").split("/")[-1]
 
@@ -33,13 +30,11 @@ def extract_extension_from_url(url: str) -> str:
     """
     filename = extract_filename_from_url(url)
 
-    # 常见复合扩展名
     compound_extensions = {".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"}
     for compound_ext in compound_extensions:
         if filename.endswith(compound_ext):
             return compound_ext
 
-    # 返回单个扩展名或空字符串
     return Path(filename).suffix
 
 

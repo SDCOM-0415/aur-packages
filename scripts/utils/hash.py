@@ -1,5 +1,8 @@
+"""哈希计算工具模块"""
+
 import hashlib
 from pathlib import Path
+from typing import Callable
 
 from constants.constants import HashAlgorithmEnum
 
@@ -17,8 +20,7 @@ def calculate_file_hash(
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
 
-    # 支持的哈希算法
-    supported_algorithms = {
+    supported_algorithms: dict[str, Callable[[], hashlib._Hash]] = {
         HashAlgorithmEnum.SHA256.value: hashlib.sha256,
         HashAlgorithmEnum.SHA512.value: hashlib.sha512,
     }
@@ -28,11 +30,9 @@ def calculate_file_hash(
             f"不支持的哈希算法: {hash_algorithm}，支持的算法: {list(supported_algorithms.keys())}"
         )
 
-    # 计算哈希值
-    hash_func = supported_algorithms[hash_algorithm.lower()]()
+    hash_func: hashlib._Hash = supported_algorithms[hash_algorithm.lower()]()
 
     with open(file_path, "rb") as f:
-        # 分块读取文件，避免大文件占用过多内存
         for chunk in iter(lambda: f.read(4096), b""):
             hash_func.update(chunk)
 
@@ -46,7 +46,7 @@ def calculate_multiple_hashes(
     if algorithms is None:
         algorithms = [HashAlgorithmEnum.SHA256.value, HashAlgorithmEnum.SHA512.value]
 
-    results = {}
+    results: dict[str, str] = {}
     for algorithm in algorithms:
         results[algorithm] = calculate_file_hash(file_path, algorithm)
 
@@ -79,17 +79,14 @@ def download_and_verify(
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        # 下载文件
         with httpx.stream("GET", url) as response:
             response.raise_for_status()
             with open(destination, "wb") as f:
                 for chunk in response.iter_bytes():
                     f.write(chunk)
 
-        # 验证哈希值
         return verify_file_hash(destination, expected_hash, hash_algorithm)
     except Exception:
-        # 如果下载或验证失败，删除可能已部分下载的文件
         if destination.exists():
             destination.unlink()
         return False

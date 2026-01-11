@@ -1,3 +1,5 @@
+"""HTTP 客户端模块"""
+
 from typing import Any
 
 from httpx import AsyncClient
@@ -15,7 +17,7 @@ class Fetcher:
     def __init__(
         self, timeout: int = 10, headers: dict[str, str] | None = None
     ) -> None:
-        merged_headers = DEFAULT_HEADERS.copy()
+        merged_headers: dict[str, str] = DEFAULT_HEADERS.copy()
         if headers:
             merged_headers.update(headers)
 
@@ -24,6 +26,7 @@ class Fetcher:
     async def fetch_json(
         self, url: str, headers: dict[str, str] | None = None
     ) -> Any | None:
+        """获取 JSON 数据"""
         try:
             response = await self.client.get(url, headers=headers)
             response.raise_for_status()
@@ -35,6 +38,7 @@ class Fetcher:
     async def fetch_text(
         self, url: str, headers: dict[str, str] | None = None
     ) -> str | None:
+        """获取文本数据"""
         try:
             response = await self.client.get(url, headers=headers)
             response.raise_for_status()
