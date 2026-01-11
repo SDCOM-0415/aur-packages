@@ -11,7 +11,9 @@ from core.package_updater import PackageUpdater
 async def main() -> None:
     """主函数，处理命令行参数并执行相应操作"""
     parser = argparse.ArgumentParser(description="AUR包更新工具")
-    parser.add_argument("--package", "-p", help="更新指定的包")
+    parser.add_argument(
+        "--package", "-p", nargs="+", metavar="NAME", help="更新指定的包（可指定多个）"
+    )
     parser.add_argument("--list", "-l", action="store_true", help="列出所有可用的包")
     parser.add_argument("--all", "-a", action="store_true", help="更新所有包")
 
@@ -24,10 +26,12 @@ async def main() -> None:
         return
 
     if args.package:
-        success = await updater.update_single_package(args.package)
-        sys.exit(0 if success else 1)
+        if len(args.package) == 1:
+            success = await updater.update_single_package(args.package[0])
+            sys.exit(0 if success else 1)
+        else:
+            await updater.update_multiple_packages(args.package)
     else:
-        # 默认行为：更新所有包
         await updater.update_all_packages()
 
 

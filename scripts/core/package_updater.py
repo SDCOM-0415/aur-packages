@@ -461,6 +461,55 @@ class PackageUpdater:
 
         return await self.update_package(package_name, package_config)
 
+    async def update_multiple_packages(self, package_names: list[str]) -> None:
+        """
+        更新多个指定的包
+
+        Args:
+            package_names: 包名列表
+        """
+        if not package_names:
+            print("错误: 未指定任何包")
+            return
+
+        # 验证包是否存在
+        valid_packages = {}
+        invalid_packages = []
+
+        for package_name in package_names:
+            if package_name not in self.config.packages:
+                invalid_packages.append(package_name)
+            else:
+                package_config = self.config.packages[package_name]
+                # 检查包是否启用
+                if not package_config.enable:
+                    print(f"  跳过: 包 '{package_name}' 已禁用")
+                    continue
+                # 检查 PKGBUILD 文件是否存在
+                if self._check_pkgbuild_exists(package_name, package_config):
+                    valid_packages[package_name] = package_config
+
+        if invalid_packages:
+            print(f"错误: 以下包不在配置中: {', '.join(invalid_packages)}")
+
+        if not valid_packages:
+            print("没有可更新的包")
+            return
+
+        print(f"开始更新 {len(valid_packages)} 个包...")
+
+        success_count = 0
+        total_count = len(valid_packages)
+
+        for package_name, package_config in valid_packages.items():
+            print()
+            success = await self.update_package(package_name, package_config)
+            if success:
+                success_count += 1
+
+        print()
+        print(f"更新完成: {success_count}/{total_count} 个包更新成功")
+
     def list_available_packages(self) -> None:
         """列出所有可用的包"""
         print("可用的包:")
