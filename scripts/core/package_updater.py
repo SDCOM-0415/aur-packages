@@ -442,60 +442,76 @@ class PackageUpdater:
         print()
         print(f"更新完成: {success_count}/{total_count} 个包更新成功")
 
+    def _is_package_updatable(
+        self, package_name: str, package_config: PackageConfig
+    ) -> tuple[bool, str | None]:
+        """
+        检查包是否可更新
+
+        Args:
+            package_name: 包名
+            package_config: 包配置
+
+        Returns:
+            (是否可更新, 跳过原因)
+        """
+        if not package_config.enable:
+            return False, f"包 '{package_name}' 已禁用"
+
+        if not self._check_pkgbuild_exists(package_name, package_config):
+            return False, f"包 '{package_name}' PKGBUILD 文件不存在"
+
+        return True, None
+
     async def update_single_package(self, package_name: str) -> bool:
         """更新单个指定的包"""
-        if package_name not in self.config.packages:
-            print(f"错误: 包 '{package_name}' 不在配置中")
-            return False
+        success_count, total_count = await self.update_packages([package_name])
+        return success_count > 0 and total_count > 0
 
-        package_config = self.config.packages[package_name]
-
-        # 检查包是否启用
-        if not package_config.enable:
-            print(f"包 '{package_name}' 已禁用，跳过更新")
-            return False
-
-        # 检查 PKGBUILD 文件是否存在
-        if not self._check_pkgbuild_exists(package_name, package_config):
-            return False
-
-        return await self.update_package(package_name, package_config)
-
-    async def update_multiple_packages(self, package_names: list[str]) -> None:
+    async def update_packages(
+        self, package_names: list[str]
+    ) -> tuple[int, int]:
         """
-        更新多个指定的包
+        更新指定的包列表
 
         Args:
             package_names: 包名列表
+
+        Returns:
+            (成功数量, 总数量)
         """
         if not package_names:
-            print("错误: 未指定任何包")
-            return
+            return 0, 0
 
-        # 验证包是否存在
-        valid_packages = {}
-        invalid_packages = []
+        # 验证和过滤包
+        valid_packages: dict[str, PackageConfig] = {}
+        invalid_packages: list[str] = []
+        skip_reasons: list[str] = []
 
         for package_name in package_names:
             if package_name not in self.config.packages:
                 invalid_packages.append(package_name)
-            else:
-                package_config = self.config.packages[package_name]
-                # 检查包是否启用
-                if not package_config.enable:
-                    print(f"  跳过: 包 '{package_name}' 已禁用")
-                    continue
-                # 检查 PKGBUILD 文件是否存在
-                if self._check_pkgbuild_exists(package_name, package_config):
-                    valid_packages[package_name] = package_config
+                continue
 
+            package_config = self.config.packages[package_name]
+            is_updatable, skip_reason = self._is_package_updatable(package_name, package_config)
+
+            if is_updatable:
+                valid_packages[package_name] = package_config
+            elif skip_reason:
+                skip_reasons.append(skip_reason)
+
+        # 输出跳过的包
         if invalid_packages:
             print(f"错误: 以下包不在配置中: {', '.join(invalid_packages)}")
 
-        if not valid_packages:
-            print("没有可更新的包")
-            return
+        for reason in skip_reasons:
+            print(f"  跳过: {reason}")
 
+        if not valid_packages:
+            return 0, 0
+
+        # 更新包
         print(f"开始更新 {len(valid_packages)} 个包...")
 
         success_count = 0
@@ -503,12 +519,13 @@ class PackageUpdater:
 
         for package_name, package_config in valid_packages.items():
             print()
-            success = await self.update_package(package_name, package_config)
-            if success:
+            if await self.update_package(package_name, package_config):
                 success_count += 1
 
         print()
         print(f"更新完成: {success_count}/{total_count} 个包更新成功")
+
+        return success_count, total_count
 
     def list_available_packages(self) -> None:
         """列出所有可用的包"""

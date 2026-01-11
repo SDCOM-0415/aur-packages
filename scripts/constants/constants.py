@@ -14,23 +14,11 @@ class ArchEnum(Enum):
     MIPS64EL = "mips64el"
 
 
-class PackageEnum(Enum):
-    """包标识符枚举"""
-
-    QQ = "qq"
-    NAVICAT_PREMIUM_CS = "navicat-premium-cs"
-
-
 class HashAlgorithmEnum(Enum):
     """哈希算法"""
 
     SHA256 = "sha256"
     SHA512 = "sha512"
-
-    @classmethod
-    def get_all(cls) -> list[str]:
-        """获取所有支持的哈希算法"""
-        return [algo.value for algo in cls]
 
 
 class ParserEnum(Enum):

@@ -21,18 +21,18 @@ async def main() -> None:
 
     updater = PackageUpdater()
 
+    # 列出所有包
     if args.list:
         updater.list_available_packages()
         return
 
+    # 更新指定的包
     if args.package:
-        if len(args.package) == 1:
-            success = await updater.update_single_package(args.package[0])
-            sys.exit(0 if success else 1)
-        else:
-            await updater.update_multiple_packages(args.package)
-    else:
-        await updater.update_all_packages()
+        success_count, total_count = await updater.update_packages(args.package)
+        sys.exit(0 if success_count == total_count else 1)
+
+    # 更新所有包
+    await updater.update_all_packages()
 
 
 if __name__ == "__main__":

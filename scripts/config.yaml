@@ -47,17 +47,3 @@ packages:
     arch:
       - x86_64
       - aarch64
-
-  # 测试包：PKGBUILD 不存在
-  test-missing:
-    name: test-missing
-    source: test
-    source_url: "https://example.com"
-    fetch_url: "https://example.com"
-    upstream: "Test/Test"
-    parser: QQParser
-    pkgbuild: "packages/nonexistent-package/PKGBUILD"
-    update_source_url: true
-    enable: true  # 是否启用更新，false 则跳过
-    arch:
-      - x86_64
