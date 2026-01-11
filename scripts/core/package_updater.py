@@ -77,6 +77,23 @@ class PackageUpdater:
         full_path = self.pkgbuild_root / pkgbuild_relative_path
         return full_path
 
+    def _check_pkgbuild_exists(self, package_name: str, package_config: PackageConfig) -> bool:
+        """
+        检查 PKGBUILD 文件是否存在
+
+        Args:
+            package_name: 包名
+            package_config: 包配置
+
+        Returns:
+            True 如果文件存在，False 否则
+        """
+        pkgbuild_path = self._get_pkgbuild_path(package_config.pkgbuild)
+        if not pkgbuild_path.exists():
+            print(f"  跳过: PKGBUILD 文件不存在: {pkgbuild_path}")
+            return False
+        return True
+
     async def _fetch_arch_urls(
         self, parser: BaseParser, supported_archs: list, response_data: str
     ) -> dict[str, str]:
@@ -379,12 +396,44 @@ class PackageUpdater:
         串行处理所有包（一个包处理完后才处理下一个）
         每个包的多个架构并行下载（通过 Downloader 实现）
         """
-        print(f"开始更新所有包（共 {len(self.config.packages)} 个）...")
+        # 过滤出启用的包
+        enabled_packages = {
+            name: config
+            for name, config in self.config.packages.items()
+            if config.enable
+        }
+        disabled_packages = [
+            name
+            for name, config in self.config.packages.items()
+            if not config.enable
+        ]
+
+        print(f"开始更新所有包（共 {len(enabled_packages)} 个启用，{len(disabled_packages)} 个禁用）...")
+
+        if disabled_packages:
+            print(f"  已跳过禁用的包: {', '.join(disabled_packages)}")
+
+        # 预检查 PKGBUILD 文件是否存在
+        valid_packages = {}
+        missing_pkgbuild_packages = []
+
+        for package_name, package_config in enabled_packages.items():
+            if not self._check_pkgbuild_exists(package_name, package_config):
+                missing_pkgbuild_packages.append(package_name)
+            else:
+                valid_packages[package_name] = package_config
+
+        if missing_pkgbuild_packages:
+            print(f"  已跳过 PKGBUILD 文件不存在的包: {', '.join(missing_pkgbuild_packages)}")
+
+        if not valid_packages:
+            print("\n没有可更新的包")
+            return
 
         success_count = 0
-        total_count = len(self.config.packages)
+        total_count = len(valid_packages)
 
-        for package_name, package_config in self.config.packages.items():
+        for package_name, package_config in valid_packages.items():
             print()
             success = await self.update_package(package_name, package_config)
             if success:
@@ -400,10 +449,21 @@ class PackageUpdater:
             return False
 
         package_config = self.config.packages[package_name]
+
+        # 检查包是否启用
+        if not package_config.enable:
+            print(f"包 '{package_name}' 已禁用，跳过更新")
+            return False
+
+        # 检查 PKGBUILD 文件是否存在
+        if not self._check_pkgbuild_exists(package_name, package_config):
+            return False
+
         return await self.update_package(package_name, package_config)
 
     def list_available_packages(self) -> None:
         """列出所有可用的包"""
         print("可用的包:")
-        for package_name in self.config.packages.keys():
-            print(f"  - {package_name}")
+        for package_name, package_config in self.config.packages.items():
+            status = "启用" if package_config.enable else "禁用"
+            print(f"  - {package_name} [{status}]")

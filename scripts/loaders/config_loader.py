@@ -44,6 +44,7 @@ class PackageConfig(BaseModel):
     pkgbuild: str
     arch: list[str] = Field(default_factory=list)
     update_source_url: bool = Field(default=True)
+    enable: bool = Field(default=True)  # 包开关，默认启用
 
     class Config:
         extra = "ignore"
