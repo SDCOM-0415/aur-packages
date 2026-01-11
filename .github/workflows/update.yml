@@ -2,32 +2,57 @@ name: Update AUR Packages
 
 on:
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '0 18 * * *'  # 每天北京时间 02:00 (UTC 18:00) 运行
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  GIT_AUTHOR_NAME: "github-actions[bot]"
+  GIT_AUTHOR_EMAIL: "github-actions[bot]@users.noreply.github.com"
+  GIT_COMMITTER_NAME: "github-actions[bot]"
+  GIT_COMMITTER_EMAIL: "github-actions[bot]@users.noreply.github.com"
+
 jobs:
   update:
+    name: Update and Push AUR Packages
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
 
     steps:
+      # ============================================================
+      # 阶段 0: 环境准备
+      # ============================================================
+
+      - name: Install system dependencies
+        run: |
+          pacman -Syu --noconfirm --needed
+          pacman -S --noconfirm --needed base-devel git openssh curl python python-pip
+
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          submodules: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
+      - name: Configure git safe directory
         run: |
-          pacman -Syu --noconfirm --needed
-          pacman -S --noconfirm --needed base-devel git openssh curl
+          git config --global --add safe.directory /__w/aur-packages/aur-packages
+          git config --global user.name "${{ env.GIT_AUTHOR_NAME }}"
+          git config --global user.email "${{ env.GIT_AUTHOR_EMAIL }}"
+          git config --global push.default simple
 
-      - name: Setup Python
+      - name: Initialize submodules
+        run: |
+          git submodule update --init --recursive
+
+      # ============================================================
+      # 阶段 1: 运行更新 AUR 包脚本
+      # ============================================================
+
+      - name: Setup Python environment
         uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.13'
@@ -38,64 +63,265 @@ jobs:
         working-directory: scripts
         run: uv sync
 
-      - name: Run update script
+      - name: Update AUR packages
+        id: update_packages
         working-directory: scripts
         run: uv run main.py --all
 
-      - name: Setup build user and SSH
+      # ============================================================
+      # 阶段 2: 配置 AUR SSH 访问
+      # ============================================================
+
+      - name: Configure SSH for AUR
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          git config --global url."ssh://git@aur.archlinux.org/".insteadOf "https://aur.archlinux.org/"
+
+      - name: Verify SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=no aur@aur.archlinux.org info
+
+      # ============================================================
+      # 阶段 3: 在 AUR 子模块中推送包
+      # ============================================================
+
+      - name: Setup build user
         run: |
           useradd -m -G wheel builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
 
-          sudo -u builduser mkdir -p /home/builduser/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" | sudo -u builduser tee /home/builduser/.ssh/id_ed25519 > /dev/null
-          sudo -u builduser chmod 600 /home/builduser/.ssh/id_ed25519
-          sudo -u builduser ssh-keyscan aur.archlinux.org >> /home/builduser/.ssh/known_hosts
-
-      - name: Build and push to AUR
+      - name: Build and push to AUR submodules
+        id: build_aur
+        shell: bash
         run: |
-          set -e
+          set -eo pipefail
 
-          for pkg in packages/*; do
-            [ -f "$pkg/PKGBUILD" ] || continue
+          UPDATED_PACKAGES=()
+          FAILED_PACKAGES=()
+          MAIN_DIR=$(pwd)
 
-            pkgname=$(basename "$pkg")
-            echo "Processing $pkgname..."
+          echo "════════════════════════════════════════════════════════════════"
+          echo "阶段 3: 构建 AUR 包并推送到 AUR 仓库"
+          echo "════════════════════════════════════════════════════════════════"
 
-            # 在子模块目录中操作
-            cd "$pkg"
+          for pkg_path in packages/*; do
+            # 跳过非目录
+            [ -d "$pkg_path" ] || continue
 
-            # 生成 .SRCINFO
-            sudo -u builduser makepkg --printsrcinfo > .SRCINFO
+            pkg_name=$(basename "$pkg_path")
+            echo ""
+            echo "────────────────────────────────────────────────────────────────"
+            echo "处理包: $pkg_name"
+            echo "────────────────────────────────────────────────────────────────"
 
-            # 构建测试
-            sudo -u builduser makepkg -fs --noconfirm
+            # 进入子模块目录
+            cd "$pkg_path" || {
+              echo "❌ 无法进入目录: $pkg_path"
+              FAILED_PACKAGES+=("$pkg_name:cd_failed")
+              cd "$MAIN_DIR"
+              continue
+            }
 
-            # 提交修改到子模块
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
-            git add -A
-
-            if ! git diff --staged --quiet; then
-              version=$(grep '^pkgver=' PKGBUILD | cut -d= -f2 | tr -d '"'"'')
-              git commit -m "Update to $version"
-              git push origin HEAD
-              echo "Updated $pkgname to $version"
+            # 验证是否为 git 仓库
+            if ! git rev-parse --git-dir > /dev/null 2>&1; then
+              echo "⏭️  不是 git 仓库，跳过"
+              cd "$MAIN_DIR"
+              continue
             fi
 
-            cd -
+            # 检查是否有更新
+            if git diff --quiet PKGBUILD && git diff --cached --quiet PKGBUILD; then
+              echo "ℹ️  PKGBUILD 无变化，跳过"
+              cd "$MAIN_DIR"
+              continue
+            fi
+
+            echo "📝 检测到 PKGBUILD 更新"
+
+            # 显示变更
+            git diff PKGBUILD || true
+
+            # 更改文件所有者
+            chown -R builduser:builduser "$(pwd)"
+
+            # 生成 .SRCINFO
+            echo "🔨 生成 .SRCINFO..."
+            if ! sudo -u builduser makepkg --printsrcinfo > .SRCINFO; then
+              echo "❌ 生成 .SRCINFO 失败"
+              FAILED_PACKAGES+=("$pkg_name:srcinfo_failed")
+              cd "$MAIN_DIR"
+              continue
+            fi
+
+            # 验证 PKGBUILD
+            echo "🔍 验证 PKGBUILD..."
+            if ! sudo -u builduser makepkg -f --noconfirm --noprepare --nobuild; then
+              echo "❌ PKGBUILD 验证失败"
+              FAILED_PACKAGES+=("$pkg_name:validation_failed")
+              cd "$MAIN_DIR"
+              continue
+            fi
+
+            # 提取版本信息
+            pkgver=$(grep '^pkgver=' PKGBUILD | cut -d= -f2 | tr -d '"' | tr -d "'")
+            pkgrel=$(grep '^pkgrel=' PKGBUILD | cut -d= -f2 | tr -d '"' | tr -d "'")
+
+            if [ -z "$pkgver" ]; then
+              echo "❌ 无法提取 pkgver"
+              FAILED_PACKAGES+=("$pkg_name:no_pkgver")
+              cd "$MAIN_DIR"
+              continue
+            fi
+
+            echo "📦 版本: $pkgver-$pkgrel"
+
+            # 提交更改
+            git add PKGBUILD .SRCINFO
+
+            if git diff --cached --quiet; then
+              echo "ℹ️  暂存区无变化，跳过提交"
+              cd "$MAIN_DIR"
+              continue
+            fi
+
+            commit_msg="Update to $pkgver-$pkgrel"
+            if ! git commit -m "$commit_msg"; then
+              echo "❌ Git 提交失败"
+              FAILED_PACKAGES+=("$pkg_name:commit_failed")
+              cd "$MAIN_DIR"
+              continue
+            fi
+
+            echo "📤 推送到 AUR..."
+            # 推送到 AUR，如果失败则回滚提交
+            if git push; then
+              echo "✅ 推送成功: $pkg_name $pkgver-$pkgrel"
+              UPDATED_PACKAGES+=("$pkg_name:$pkgver-$pkgrel")
+            else
+              echo "❌ 推送失败"
+              FAILED_PACKAGES+=("$pkg_name:push_failed")
+              git reset --soft HEAD~1
+            fi
+
+            cd "$MAIN_DIR"
           done
 
-      - name: Update submodule references and push to main repo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          echo "AUR 推送完成"
+          echo "════════════════════════════════════════════════════════════════"
 
-          # 添加子模块的最新引用
-          git add packages/
+          # 输出结果到 GitHub Actions
+          echo "updated_count=${#UPDATED_PACKAGES[@]}" >> $GITHUB_OUTPUT
+          echo "failed_count=${#FAILED_PACKAGES[@]}" >> $GITHUB_OUTPUT
 
-          # 如果有变更，提交并推送
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update AUR submodules"
-            git push
+          if [ ${#UPDATED_PACKAGES[@]} -gt 0 ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
           fi
+
+          # 输出更新的包列表
+          if [ ${#UPDATED_PACKAGES[@]} -gt 0 ]; then
+            echo ""
+            echo "✅ 成功更新的包:"
+            for pkg in "${UPDATED_PACKAGES[@]}"; do
+              echo "   - $pkg"
+            done
+          fi
+
+          # 输出失败的包列表
+          if [ ${#FAILED_PACKAGES[@]} -gt 0 ]; then
+            echo ""
+            echo "❌ 失败的包:"
+            for pkg in "${FAILED_PACKAGES[@]}"; do
+              echo "   - $pkg"
+            done
+          fi
+
+      # ============================================================
+      # 阶段 4: 同步主仓库子模块引用
+      # ============================================================
+
+      - name: Sync main repository submodules
+        if: steps.build_aur.outputs.has_updates == 'true'
+        run: |
+          set -eo pipefail
+
+          cd /__w/aur-packages/aur-packages
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "阶段 4: 同步主仓库子模块引用"
+          echo "════════════════════════════════════════════════════════════════"
+
+          echo ""
+          echo "📊 子模块变更摘要:"
+          git submodule summary
+
+          echo ""
+          echo "🔄 添加子模块变更..."
+
+          has_changes=false
+          for submodule in packages/*; do
+            if [ -d "$submodule" ] && [ -d "$submodule/.git" ]; then
+              echo "  - $(basename "$submodule")"
+              git add "$submodule"
+              has_changes=true
+            fi
+          done
+
+          if [ "$has_changes" = false ]; then
+            echo "ℹ️  无子模块变更需要提交"
+            exit 0
+          fi
+
+          # 检查是否有暂存的更改
+          if git diff --cached --quiet; then
+            echo "ℹ️  暂存区无变化"
+            exit 0
+          fi
+
+          echo ""
+          echo "📝 提交子模块引用更新..."
+
+          updated_count="${{ steps.build_aur.outputs.updated_count }}"
+          commit_msg=$'chore: 🔨 sync AUR submodule references\n\nSync submodule pointers with AUR repositories.\n\nUpdated '"${updated_count}"$' packages\n\nCo-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>'
+
+          if ! git commit -m "$commit_msg"; then
+            echo "❌ 提交失败"
+            exit 1
+          fi
+
+          echo "✅ 提交成功"
+
+          echo ""
+          echo "📤 推送到主仓库..."
+          if ! git push origin main; then
+            echo "❌ 推送失败"
+            exit 1
+          fi
+
+          echo "✅ 主仓库同步完成"
+
+      # ============================================================
+      # 阶段 5: 输出摘要
+      # ============================================================
+
+      - name: Build job summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════════════════════════════" >> $GITHUB_STEP_SUMMARY
+          echo "# 📦 AUR 包更新摘要" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 执行结果" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 成功更新: \`${{ steps.build_aur.outputs.updated_count }}\` 个包" >> $GITHUB_STEP_SUMMARY
+          echo "- ❌ 失败: \`${{ steps.build_aur.outputs.failed_count }}\` 个包" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔄 是否有更新: \`${{ steps.build_aur.outputs.has_updates }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "════════════════════════════════════════════════════════════════" >> $GITHUB_STEP_SUMMARY

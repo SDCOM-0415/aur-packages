@@ -7,7 +7,10 @@
       "Bash(git:*)",
       "Bash(uv:*)",
       "Bash(gh:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python3:*)",
+      "Bash(jq:*)",
+      "Bash(yamllint:*)"
     ]
   }
 }
