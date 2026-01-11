@@ -1,6 +1,10 @@
 """
 包更新器
 整合fetch、parse和update三个流程
+
+架构设计：
+1. 串行下载所有维护的 AUR 包（一个包处理完后才处理下一个）
+2. 并行下载单个包的所有架构（使用 Downloader 的并发功能）
 """
 
 from pathlib import Path
@@ -20,21 +24,32 @@ from utils.version_utils import compare_versions
 class PackageUpdater:
     """包更新器，整合fetch、parse和update流程"""
 
-    def __init__(self):
-        self.fetcher = Fetcher()
+    def __init__(self) -> None:
+        # 加载配置
         self.config = ConfigLoader.load_from_yaml()
+
+        # 从配置中获取下载设置
+        download_settings = self.config.settings.download
+
+        # 初始化 Fetcher（使用配置的超时时间）
+        self.fetcher = Fetcher(timeout=download_settings.timeout)
+
+        # 注册解析器
         self.parsers: dict[str, BaseParser] = {
             ParserEnum.QQ.value: QQParser(),
             ParserEnum.NAVICAT_PREMIUM_CS.value: NavicatPremiumCSParser(),
         }
-        # 初始化下载器（最大并发3个文件）
+
+        # 初始化下载器（使用配置的下载设置）
         self.downloader = Downloader(
             client=self.fetcher.client,
-            max_concurrent=3,
-            max_retries=3,
-            base_delay=1.0,
-            show_progress=True,
+            max_concurrent=download_settings.max_concurrent,
+            max_retries=download_settings.max_retries,
+            base_delay=download_settings.base_delay,
+            chunk_size=download_settings.chunk_size,
+            show_progress=download_settings.show_progress,
         )
+
         # 获取项目根目录（这里的项目根目录指更新脚本的根目录）
         # 当前脚本位于 scripts/core/，所以需要向上两级到达项目根目录
         self.project_root = Path(__file__).parent.parent
@@ -82,7 +97,11 @@ class PackageUpdater:
         arch_urls: dict[str, str],
         verify_only: bool = False,
     ) -> tuple[dict[str, str], bool]:
-        """下载文件并计算校验和"""
+        """
+        下载文件并计算校验和
+
+        使用 Downloader 的并发下载功能，并行下载单个包的所有架构
+        """
         download_dir = Path(DOWNLOAD_DIR)
         download_dir.mkdir(exist_ok=True)
 
@@ -97,7 +116,10 @@ class PackageUpdater:
             for arch, url in arch_urls.items()
         }
 
-        download_results = await self.downloader.download_all(downloads)
+        # 使用 Downloader 并行下载所有架构
+        download_results = await self.downloader.download_all(
+            downloads, package_name=package_name
+        )
 
         checksums = {}
         failed_archs = []
@@ -351,8 +373,13 @@ class PackageUpdater:
         return calculate_file_hash(file_path, HashAlgorithmEnum.SHA512.value)
 
     async def update_all_packages(self) -> None:
-        """更新所有配置的包"""
-        print("开始更新所有包...")
+        """
+        更新所有配置的包
+
+        串行处理所有包（一个包处理完后才处理下一个）
+        每个包的多个架构并行下载（通过 Downloader 实现）
+        """
+        print(f"开始更新所有包（共 {len(self.config.packages)} 个）...")
 
         success_count = 0
         total_count = len(self.config.packages)
